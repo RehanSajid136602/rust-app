@@ -562,6 +562,7 @@ const exportPdf = async () => {
       adjustmentAmount: form.adjustment_amount || 0,
       total: form.total,
     }
+    document.title = `Invoice ${form.invoice_number}`
     await nextTick()
     setTimeout(() => window.print(), 500)
   } catch (e) {

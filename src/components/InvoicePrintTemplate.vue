@@ -181,7 +181,7 @@ const formatDate = (dateStr: string): string => {
 }
 
 .footer-img {
-  margin-top: 12px;
+  margin-top: 28px;
 }
 
 .info-table {
