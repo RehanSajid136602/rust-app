@@ -79,7 +79,7 @@
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Ref #</label>
-              <input v-model="form.ref_number" type="text" class="input" placeholder="PO/Ref" />
+              <input v-model="form.ref_number" type="text" class="input bg-gray-100 text-gray-500" readonly placeholder="Auto-generated" />
             </div>
           </div>
 
@@ -283,15 +283,22 @@
         </div>
       </div>
     </div>
+    <!-- PDF Export Success Dialog -->
+    <ExportSuccessDialog
+      v-if="exportedPath"
+      :file-path="exportedPath"
+      @close="exportedPath = null"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { save } from '@tauri-apps/plugin-dialog'
 import AutocompleteLineEdit from '../components/AutocompleteLineEdit.vue'
 import type { Suggestion } from '../components/AutocompleteLineEdit.vue'
-import { printData } from '../composables/usePrint'
+import ExportSuccessDialog from '../components/ExportSuccessDialog.vue'
 
 interface InvoiceItem {
   id?: number
@@ -342,6 +349,7 @@ const showForm = ref(false)
 const showPayment = ref(false)
 const editing = ref(false)
 const saving = ref(false)
+const exportedPath = ref<string | null>(null)
 
 // Refs for field navigation
 const acRefs = ref<Record<string, any>>({})
@@ -456,9 +464,12 @@ const onClientChange = () => {
   if (c) { form.client_name = c.name; form.client_address = c.address || '' }
 }
 
-const openCreateModal = () => {
+const openCreateModal = async () => {
   editing.value = false
   Object.assign(form, emptyForm())
+  try {
+    form.ref_number = await invoke<string>('generate_ref_number')
+  } catch { /* fallback to empty */ }
   showForm.value = true
 }
 
@@ -532,27 +543,18 @@ const exportPdf = async () => {
     return
   }
   recalc()
+  const defaultName = form.ref_number.replace(/[\\/:*?"<>|]/g, '-')
+  const filePath = await save({
+    defaultPath: `Invoice-${defaultName}.pdf`,
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  })
+  if (!filePath) return
   try {
-    const settings = await invoke<any>('get_company_settings')
-    printData.value = {
-      docType: 'Invoice',
-      date: form.invoice_date,
-      refNumber: form.invoice_number,
-      salutation: settings?.salutation || 'Respected Sir,',
-      bodyText: settings?.body_text || '',
-      items: form.items.map(item => ({
-        sno: item.sno,
-        item_name: item.item_name,
-        quantity: item.quantity,
-        price_per_unit: item.price_per_unit,
-      })),
-      subtotal: form.subtotal,
-      adjustmentLabel: form.adjustment_label || '',
-      adjustmentAmount: form.adjustment_amount || 0,
-      total: form.total,
-    }
-    await nextTick()
-    setTimeout(() => window.print(), 500)
+    await invoke('export_invoice_pdf', {
+      invoice: { ...form },
+      outputPath: filePath,
+    })
+    exportedPath.value = filePath
   } catch (e) {
     alert('Export failed: ' + e)
   }

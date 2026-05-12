@@ -72,7 +72,7 @@
             </div>
             <div>
               <label class="block text-sm font-medium text-gray-700 mb-1">Ref #</label>
-              <input v-model="form.ref_number" type="text" class="input" placeholder="PO/Ref" />
+              <input v-model="form.ref_number" type="text" class="input bg-gray-100 text-gray-500" readonly placeholder="Auto-generated" />
             </div>
           </div>
 
@@ -197,15 +197,23 @@
         </div>
       </div>
     </div>
+
+    <!-- PDF Export Success Dialog -->
+    <ExportSuccessDialog
+      v-if="exportedPath"
+      :file-path="exportedPath"
+      @close="exportedPath = null"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { save } from '@tauri-apps/plugin-dialog'
 import AutocompleteLineEdit from '../components/AutocompleteLineEdit.vue'
 import type { Suggestion } from '../components/AutocompleteLineEdit.vue'
-import { printData } from '../composables/usePrint'
+import ExportSuccessDialog from '../components/ExportSuccessDialog.vue'
 
 interface QuotationItem {
   id?: number; quotation_id?: number; sno: number
@@ -228,6 +236,7 @@ const quotations = ref<Quotation[]>([])
 const clients = ref<Client[]>([])
 const searchQuery = ref(''); const statusFilter = ref('')
 const showForm = ref(false); const editing = ref(false); const saving = ref(false)
+const exportedPath = ref<string | null>(null)
 
 const acRefs = ref<Record<string, any>>({})
 const fieldRefs = ref<Record<string, HTMLElement>>({})
@@ -307,7 +316,14 @@ const loadClients = async () => { try { clients.value = await invoke<Client[]>('
 
 const onClientChange = () => { const c = clients.value.find(c => c.id === form.client_id); if (c) { form.client_name = c.name; form.client_address = c.address || '' } }
 
-const openCreateModal = () => { editing.value = false; Object.assign(form, emptyForm()); showForm.value = true }
+const openCreateModal = async () => {
+  editing.value = false
+  Object.assign(form, emptyForm())
+  try {
+    form.ref_number = await invoke<string>('generate_ref_number')
+  } catch { /* fallback to empty */ }
+  showForm.value = true
+}
 const editQuotation = (q: Quotation) => { editing.value = true; Object.assign(form, JSON.parse(JSON.stringify(q))); showForm.value = true }
 const closeForm = () => { showForm.value = false }
 const addItem = () => { form.items.push({ sno: form.items.length + 1, item_name: '', quantity: 1, price_per_unit: 0, discount_amount: 0, tax_amount: 0, total_price: 0 }) }
@@ -361,27 +377,18 @@ const exportPdf = async () => {
     return
   }
   recalc()
+  const defaultName = form.ref_number.replace(/[\\/:*?"<>|]/g, '-')
+  const filePath = await save({
+    defaultPath: `Quotation-${defaultName}.pdf`,
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  })
+  if (!filePath) return
   try {
-    const settings = await invoke<any>('get_company_settings')
-    printData.value = {
-      docType: 'Quotation',
-      date: form.quotation_date,
-      refNumber: form.quotation_number,
-      salutation: settings?.salutation || 'Respected Sir,',
-      bodyText: settings?.body_text || '',
-      items: form.items.map(item => ({
-        sno: item.sno,
-        item_name: item.item_name,
-        quantity: item.quantity,
-        price_per_unit: item.price_per_unit,
-      })),
-      subtotal: form.subtotal,
-      adjustmentLabel: form.adjustment_label || '',
-      adjustmentAmount: form.adjustment_amount || 0,
-      total: form.total,
-    }
-    await nextTick()
-    setTimeout(() => window.print(), 500)
+    await invoke('export_quotation_pdf', {
+      quotation: { ...form },
+      outputPath: filePath,
+    })
+    exportedPath.value = filePath
   } catch (e) {
     alert('Export failed: ' + e)
   }

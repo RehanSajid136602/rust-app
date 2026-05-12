@@ -8,6 +8,8 @@ pub mod settings_cmds;
 pub mod ledger_cmds;
 pub mod import_cmds;
 pub mod pdf_cmds;
+pub mod ref_number;
+pub mod file_ops;
 
 pub use product_cmds::*;
 pub use client_cmds::*;
@@ -17,6 +19,8 @@ pub use settings_cmds::*;
 pub use ledger_cmds::*;
 pub use import_cmds::*;
 pub use pdf_cmds::*;
+pub use ref_number::*;
+pub use file_ops::*;
 
 /// Placeholder greet command
 #[tauri::command]
