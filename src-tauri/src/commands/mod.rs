@@ -7,6 +7,7 @@ pub mod quotation_cmds;
 pub mod settings_cmds;
 pub mod ledger_cmds;
 pub mod import_cmds;
+pub mod pdf_cmds;
 
 pub use product_cmds::*;
 pub use client_cmds::*;
@@ -15,6 +16,7 @@ pub use quotation_cmds::*;
 pub use settings_cmds::*;
 pub use ledger_cmds::*;
 pub use import_cmds::*;
+pub use pdf_cmds::*;
 
 /// Placeholder greet command
 #[tauri::command]

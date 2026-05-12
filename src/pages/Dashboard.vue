@@ -169,7 +169,7 @@ const recentQuotations = ref<Quotation[]>([])
 
 const fmt = (n: number | undefined): string => {
   if (n === undefined || n === null) n = 0
-  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(n)
+  return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2 }).format(n)
 }
 
 const statusBadge = (s: string): string => {

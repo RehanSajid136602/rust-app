@@ -158,9 +158,7 @@ const searchProducts = async (q: string) => {
         id: p.id,
         name: p.name,
         detail: new Intl.NumberFormat('en-IN', {
-          style: 'currency',
-          currency: 'INR',
-          maximumFractionDigits: 0,
+          minimumFractionDigits: 0,
         }).format(p.price_per_unit),
         data: p,
       }))

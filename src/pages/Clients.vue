@@ -103,7 +103,7 @@ const filteredClients = computed(() => {
 })
 
 const formatCurrency = (amount: number): string => {
-  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount)
+  return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2 }).format(amount)
 }
 
 const loadClients = async () => {

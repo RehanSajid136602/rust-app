@@ -93,6 +93,8 @@ pub fn run() {
             commands::get_clients_with_balance,
             commands::import_products_excel,
             commands::import_products_pdf,
+            commands::export_invoice_pdf,
+            commands::export_quotation_pdf,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

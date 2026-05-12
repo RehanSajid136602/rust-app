@@ -187,6 +187,9 @@
         </div>
 
         <div class="flex justify-end space-x-3 p-6 border-t">
+          <button v-if="editing" @click="exportPdf" class="btn-secondary-outline">
+            Export PDF
+          </button>
           <button @click="closeForm" class="btn-secondary">Cancel</button>
           <button @click="saveQuotation" class="btn-primary" :disabled="saving">
             {{ saving ? 'Saving...' : (editing ? 'Update' : 'Create') }}
@@ -200,6 +203,8 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { save } from '@tauri-apps/plugin-dialog'
+import { open as shellOpen } from '@tauri-apps/plugin-shell'
 import AutocompleteLineEdit from '../components/AutocompleteLineEdit.vue'
 import type { Suggestion } from '../components/AutocompleteLineEdit.vue'
 
@@ -242,7 +247,7 @@ const form = reactive<Quotation>(emptyForm())
 
 const fmt = (n: number | undefined): string => {
   if (n === undefined || n === null) n = 0
-  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 2 }).format(n)
+  return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2 }).format(n)
 }
 
 const statusBadge = (s: string): string => {
@@ -349,6 +354,30 @@ const convertToInvoice = async (q: Quotation) => {
 const deleteQuotation = async (id: number) => {
   if (!confirm('Delete this quotation?')) return
   try { await invoke('delete_quotation', { id }); await loadQuotations() } catch (e) { alert('Error: ' + e) }
+}
+
+const exportPdf = async () => {
+  if (!editing.value) {
+    alert('Please save the quotation before exporting.')
+    return
+  }
+  recalc()
+  const defaultName = form.quotation_number.replace(/[\\/:*?"<>|]/g, '-')
+  const filePath = await save({
+    defaultPath: `${defaultName}.pdf`,
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  })
+  if (!filePath) return
+  try {
+    const saved = await invoke<string>('export_quotation_pdf', {
+      quotation: { ...form },
+      outputPath: filePath,
+    })
+    const open = confirm(`PDF exported to:\n${saved}\n\nOpen file?`)
+    if (open) await shellOpen(saved)
+  } catch (e) {
+    alert('Export failed: ' + e)
+  }
 }
 
 onMounted(() => { loadQuotations(); loadClients() })
