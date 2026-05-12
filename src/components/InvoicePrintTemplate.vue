@@ -75,12 +75,6 @@
       </tbody>
     </table>
 
-    <!-- THANK YOU TEXT -->
-    <div class="thank-you">
-      <p>Thank you for considering <strong>Zahra Enterprises</strong> as business partner.</p>
-      <p>And hope for a good business relationship in future.</p>
-    </div>
-
     <!-- FOOTER IMAGE -->
     <img
       src="/footer.png"
@@ -290,14 +284,6 @@ const formatDate = (dateStr: string): string => {
 .net-row .td-value {
   text-align: center;
   font-weight: bold;
-}
-
-.thank-you {
-  margin-bottom: 24px;
-}
-
-.thank-you p {
-  margin-bottom: 4px;
 }
 
 /* Print-specific overrides */
