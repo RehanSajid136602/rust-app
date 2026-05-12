@@ -298,8 +298,8 @@ mod tests {
     
     #[test]
     fn test_apply_migrations() {
-        let conn = Connection::open_in_memory().unwrap();
-        let result = apply_migrations(&conn);
+        let mut conn = Connection::open_in_memory().unwrap();
+        let result = apply_migrations(&mut conn);
         assert!(result.is_ok());
         
         // Verify tables were created
@@ -319,9 +319,9 @@ mod tests {
     
     #[test]
     fn test_seed_defaults() {
-        let conn = Connection::open_in_memory().unwrap();
-        apply_migrations(&conn).unwrap();
-        seed_defaults(&conn).unwrap();
+        let mut conn = Connection::open_in_memory().unwrap();
+        apply_migrations(&mut conn).unwrap();
+        seed_defaults(&mut conn).unwrap();
         
         // Verify settings were seeded
         let count: i64 = conn

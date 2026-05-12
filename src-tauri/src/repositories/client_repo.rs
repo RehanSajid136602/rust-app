@@ -167,8 +167,8 @@ mod tests {
     
     #[test]
     fn test_create_client() {
-        let conn = setup_test_db();
-        let repo = ClientRepository::new(&conn);
+        let mut conn = setup_test_db();
+        let repo = ClientRepository::new(&mut conn);
         
         let client = Client {
             id: None,
@@ -189,8 +189,8 @@ mod tests {
     
     #[test]
     fn test_update_balance() {
-        let conn = setup_test_db();
-        let repo = ClientRepository::new(&conn);
+        let mut conn = setup_test_db();
+        let repo = ClientRepository::new(&mut conn);
         
         let client = Client::default();
         let id = repo.create(&client).unwrap();
