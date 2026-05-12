@@ -210,9 +210,9 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { save } from '@tauri-apps/plugin-dialog'
 import AutocompleteLineEdit from '../components/AutocompleteLineEdit.vue'
 import type { Suggestion } from '../components/AutocompleteLineEdit.vue'
+import { printData } from '../composables/usePrint'
 import ExportSuccessDialog from '../components/ExportSuccessDialog.vue'
 
 interface QuotationItem {
@@ -377,18 +377,27 @@ const exportPdf = async () => {
     return
   }
   recalc()
-  const defaultName = form.ref_number.replace(/[\\/:*?"<>|]/g, '-')
-  const filePath = await save({
-    defaultPath: `Quotation-${defaultName}.pdf`,
-    filters: [{ name: 'PDF', extensions: ['pdf'] }],
-  })
-  if (!filePath) return
   try {
-    await invoke('export_quotation_pdf', {
-      quotation: { ...form },
-      outputPath: filePath,
-    })
-    exportedPath.value = filePath
+    const settings = await invoke<any>('get_company_settings')
+    printData.value = {
+      docType: 'Quotation',
+      date: form.quotation_date,
+      refNumber: form.quotation_number,
+      salutation: settings?.salutation || 'Respected Sir,',
+      bodyText: settings?.body_text || '',
+      items: form.items.map(item => ({
+        sno: item.sno,
+        item_name: item.item_name,
+        quantity: item.quantity,
+        price_per_unit: item.price_per_unit,
+      })),
+      subtotal: form.subtotal,
+      adjustmentLabel: form.adjustment_label || '',
+      adjustmentAmount: form.adjustment_amount || 0,
+      total: form.total,
+    }
+    await nextTick()
+    setTimeout(() => window.print(), 500)
   } catch (e) {
     alert('Export failed: ' + e)
   }
