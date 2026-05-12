@@ -49,10 +49,10 @@ pub fn search_products(state: tauri::State<AppState>, query: String) -> Result<V
     let search_pattern = format!("%{}%", query);
     let mut stmt = conn.prepare(
         "SELECT id, name, price_per_unit, unit, hsn_code, created_at 
-         FROM products WHERE name LIKE ? ORDER BY name LIMIT 50"
+         FROM products WHERE name LIKE ?1 ORDER BY name LIMIT 50"
     ).map_err(|e| e.to_string())?;
     
-    let products = stmt.query_map([search_pattern], |row| {
+    let products = stmt.query_map(rusqlite::params![search_pattern], |row| {
         Ok(Product {
             id: row.get(0)?,
             name: row.get(1)?,

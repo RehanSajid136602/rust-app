@@ -14,28 +14,36 @@
       @keydown.tab="onTab"
     />
 
-    <!-- Dropdown -->
-    <div
-      v-if="showDropdown && suggestions.length > 0"
-      class="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto"
-    >
+    <!-- Dropdown portaled to body to avoid clipping -->
+    <Teleport to="body">
       <div
-        v-for="(item, idx) in suggestions"
-        :key="item.id ?? idx"
-        :ref="el => setItemRef(el, idx)"
-        class="px-3 py-2 cursor-pointer text-sm flex items-center justify-between"
-        :class="idx === selectedIdx ? 'bg-primary-50 text-primary-700' : 'hover:bg-gray-50 text-gray-700'"
-        @mousedown.prevent="selectItem(item)"
+        v-if="showDropdown"
+        :style="dropdownStyle"
+        class="fixed bg-white border border-gray-200 rounded-lg shadow-lg z-[9999] max-h-48 overflow-y-auto min-w-[200px]"
       >
-        <span class="font-medium truncate">{{ item.name }}</span>
-        <span class="text-xs text-gray-500 ml-3 whitespace-nowrap">{{ item.detail }}</span>
+        <div v-if="suggestions.length > 0">
+          <div
+            v-for="(item, idx) in suggestions"
+            :key="item.id ?? idx"
+            :ref="el => setItemRef(el, idx)"
+            class="px-3 py-2 cursor-pointer text-sm flex items-center justify-between"
+            :class="idx === selectedIdx ? 'bg-primary-50 text-primary-700' : 'hover:bg-gray-50 text-gray-700'"
+            @mousedown.prevent="selectItem(item)"
+          >
+            <span class="font-medium truncate">{{ item.name }}</span>
+            <span class="text-xs text-gray-500 ml-3 whitespace-nowrap">{{ item.detail }}</span>
+          </div>
+        </div>
+        <div v-else class="px-3 py-3 text-sm text-gray-400 text-center">
+          {{ query.length > 0 ? 'No matching products' : 'No products in catalog' }}
+        </div>
       </div>
-    </div>
+    </Teleport>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, computed, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 
 export interface Suggestion {
@@ -52,7 +60,7 @@ const props = withDefaults(defineProps<{
   debounceMs?: number
 }>(), {
   modelValue: '',
-  placeholder: 'Search...',
+  placeholder: 'Type to search products...',
   minChars: 1,
   debounceMs: 150,
 })
@@ -73,7 +81,26 @@ const inputRef = ref<HTMLInputElement | null>(null)
 const itemRefs = ref<HTMLElement[]>([])
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
-// Sync external modelValue changes into local query
+// Dropdown position tracking
+const dropdownPos = ref({ top: 0, left: 0, width: 0 })
+const dropdownStyle = computed(() => ({
+  top: dropdownPos.value.top + 'px',
+  left: dropdownPos.value.left + 'px',
+  width: Math.max(dropdownPos.value.width, 200) + 'px',
+}))
+
+const updateDropdownPos = () => {
+  if (containerRef.value) {
+    const rect = containerRef.value.getBoundingClientRect()
+    dropdownPos.value = {
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+    }
+  }
+}
+
+// Sync external modelValue
 watch(() => props.modelValue, (val) => {
   if (val !== undefined && val !== query.value) {
     query.value = val
@@ -99,10 +126,11 @@ const onInputEv = (e: Event) => {
   const val = (e.target as HTMLInputElement).value
   query.value = val
   emit('update:modelValue', val)
-  
+
   if (val.length >= props.minChars) {
     if (debounceTimer) clearTimeout(debounceTimer)
     debounceTimer = setTimeout(() => {
+      updateDropdownPos()
       searchProducts(val)
     }, props.debounceMs)
   } else {
@@ -112,12 +140,8 @@ const onInputEv = (e: Event) => {
 }
 
 const onFocus = () => {
-  // Show suggestions immediately if there's content, or show all products if empty
-  if (query.value.length >= props.minChars) {
-    searchProducts(query.value)
-  } else {
-    searchProducts('')
-  }
+  updateDropdownPos()
+  searchProducts(query.value.length >= props.minChars ? query.value : '')
 }
 
 const onBlur = () => {
@@ -129,18 +153,22 @@ const onBlur = () => {
 const searchProducts = async (q: string) => {
   try {
     const results = await invoke<any[]>('search_products', { query: q })
-    suggestions.value = results.map((p: any) => ({
-      id: p.id,
-      name: p.name,
-      detail: new Intl.NumberFormat('en-IN', {
-        style: 'currency',
-        currency: 'INR',
-        maximumFractionDigits: 0,
-      }).format(p.price_per_unit),
-      data: p,
-    }))
-    selectedIdx.value = -1
-    showDropdown.value = suggestions.value.length > 0
+    if (results && results.length > 0) {
+      suggestions.value = results.map((p: any) => ({
+        id: p.id,
+        name: p.name,
+        detail: new Intl.NumberFormat('en-IN', {
+          style: 'currency',
+          currency: 'INR',
+          maximumFractionDigits: 0,
+        }).format(p.price_per_unit),
+        data: p,
+      }))
+      showDropdown.value = true
+    } else {
+      suggestions.value = []
+      showDropdown.value = true
+    }
   } catch (e) {
     console.error('searchProducts failed:', e)
     suggestions.value = []
@@ -149,7 +177,7 @@ const searchProducts = async (q: string) => {
 }
 
 const onKeydown = (e: KeyboardEvent) => {
-  if (!showDropdown.value) return
+  if (!showDropdown.value || suggestions.value.length === 0) return
 
   if (e.key === 'ArrowDown') {
     e.preventDefault()
@@ -180,9 +208,10 @@ const selectItem = (item: Suggestion) => {
 }
 
 const onEnter = () => {
-  if (showDropdown.value && selectedIdx.value >= 0) {
+  if (showDropdown.value && selectedIdx.value >= 0 && selectedIdx.value < suggestions.value.length) {
     selectItem(suggestions.value[selectedIdx.value])
   } else {
+    showDropdown.value = false
     emit('enter')
   }
 }
@@ -197,5 +226,16 @@ watch(() => query.value, (val) => {
     suggestions.value = []
     showDropdown.value = false
   }
+})
+
+// Update position on scroll/resize
+onMounted(() => {
+  window.addEventListener('scroll', updateDropdownPos, true)
+  window.addEventListener('resize', updateDropdownPos)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('scroll', updateDropdownPos, true)
+  window.removeEventListener('resize', updateDropdownPos)
 })
 </script>

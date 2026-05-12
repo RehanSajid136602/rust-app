@@ -28,7 +28,13 @@ pub enum DatabaseError {
 
 /// Get the database path
 fn get_database_path() -> PathBuf {
-    PathBuf::from("invoice_app.db")
+    // Always use a path relative to the src-tauri directory
+    // During `tauri dev`, CWD is src-tauri/, so this resolves correctly
+    let db_path = PathBuf::from("invoice_app.db");
+    let absolute = std::env::current_dir()
+        .unwrap_or_else(|_| PathBuf::from("."))
+        .join(&db_path);
+    absolute
 }
 
 /// Create a new database connection
