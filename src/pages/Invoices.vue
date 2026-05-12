@@ -295,6 +295,7 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import AutocompleteLineEdit from '../components/AutocompleteLineEdit.vue'
 import type { Suggestion } from '../components/AutocompleteLineEdit.vue'
 import { printData } from '../composables/usePrint'
@@ -562,7 +563,9 @@ const exportPdf = async () => {
       adjustmentAmount: form.adjustment_amount || 0,
       total: form.total,
     }
-    document.title = `Invoice ${form.invoice_number}`
+    const title = `Invoice ${form.invoice_number}`
+    document.title = title
+    await getCurrentWindow().setTitle(title)
     await nextTick()
     setTimeout(() => window.print(), 500)
   } catch (e) {

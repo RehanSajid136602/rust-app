@@ -107,59 +107,184 @@ pub fn import_from_pdf(
     Ok((imported, errors))
 }
 
-/// Parse a line to extract product name and price
-/// Handles formats:
-///   "Widget A    100.00"
-///   "Widget A    ₹100.00"
-///   "1. Widget A    100.00"
-///   "Widget A    100.00  pcs"
-///   "100.00    Widget A"
+/// Parse a line to extract product name and price.
 fn parse_price_line(line: &str) -> Option<(String, Decimal)> {
-    let parts: Vec<&str> = line.split_whitespace().collect();
-    if parts.len() < 2 {
+    let line = line.trim();
+    if line.is_empty() {
         return None;
     }
-    
-    // Known unit strings to skip at the end
-    let known_units = ["pcs", "pc", "kg", "g", "l", "ml", "m", "cm", "mm", "nos", "set", "box", "pack", "pair", "dozen", "doz"];
-    
-    // Try each word from right to left to find a price
-    for end_offset in 0..3.min(parts.len()) {
-        let idx = parts.len() - 1 - end_offset;
-        let candidate = parts[idx];
-        
-        // Skip known units
-        if known_units.contains(&candidate.to_lowercase().as_str()) {
+
+    let known_units = [
+        "pcs", "pc", "kg", "g", "l", "ml", "m", "cm", "mm",
+        "nos", "set", "box", "pack", "pair", "dozen", "doz",
+        "vial", "vials", "bottle", "btl", "kit", "unit", "units",
+        "strip", "tablet", "tab", "capsule", "cap", "amp", "ampoule",
+        "roll", "sheet", "can", "drum", "barrel", "carton", "ctn",
+    ];
+
+    // Find price candidates by scanning for number patterns
+    #[derive(Debug)]
+    struct PriceCandidate {
+        start: usize,
+        end: usize,
+        value: f64,
+    }
+
+    let mut candidates: Vec<PriceCandidate> = Vec::new();
+    let chars: Vec<char> = line.chars().collect();
+
+    // Scan through the line for price-like patterns
+    let mut i = 0;
+    while i < chars.len() {
+        // Skip non-price-start characters
+        if !chars[i].is_ascii_digit() && chars[i] != '₹' && chars[i] != 'R' {
+            i += 1;
             continue;
         }
-        
-        let price_str = candidate
-            .trim_start_matches('₹')
-            .trim_start_matches("Rs.")
-            .trim_start_matches("Rs")
-            .trim_end_matches('.');
-        
-        if let Ok(price_num) = price_str.replace(",", "").parse::<f64>() {
-            if price_num > 0.0 && price_num < 100_000_000.0 {
-                // Build name from parts before the price
-                let mut name_parts: Vec<&str> = parts[..idx].to_vec();
-                
-                // Strip leading number/index
-                if !name_parts.is_empty() {
-                    let first = name_parts[0];
-                    let first_stripped = first.trim_end_matches('.').trim_end_matches(')');
-                    if first_stripped.chars().all(|c| c.is_ascii_digit()) && name_parts.len() > 1 {
-                        name_parts.remove(0);
-                    }
+
+        let scan_start = i;
+
+        // Skip currency prefix
+        if chars[i] == '₹' {
+            i += 1;
+        } else if chars.get(i..i + 3).map_or(false, |s| s == ['R', 's', '.']) {
+            i += 3;
+        } else if chars.get(i..i + 2).map_or(false, |s| s == ['R', 's']) {
+            i += 2;
+        }
+
+        // Skip whitespace after currency prefix
+        while i < chars.len() && chars[i].is_whitespace() {
+            i += 1;
+        }
+
+        // Read the numeric price: digits, commas, decimal points
+        let num_start = i;
+        while i < chars.len() && (chars[i].is_ascii_digit() || chars[i] == ',' || chars[i] == '.') {
+            i += 1;
+        }
+        let num_end = i;
+
+        if num_end <= num_start {
+            // No digits found, continue
+            i = scan_start + 1;
+            continue;
+        }
+
+        let num_str: String = chars[num_start..num_end].iter().collect();
+        let cleaned = num_str.replace(",", "");
+
+        if let Ok(n) = cleaned.parse::<f64>() {
+            if n > 0.0 && n < 100_000_000.0 {
+                // Check for trailing /- or /= or / or -
+                let mut price_end = num_end;
+                while price_end < chars.len() && (chars[price_end] == '/' || chars[price_end] == '-' || chars[price_end] == '=') {
+                    price_end += 1;
                 }
-                
-                let name = name_parts.join(" ").trim().to_string();
-                if name.len() >= 2 {
-                    return Some((name, Decimal::try_from(price_num).unwrap_or(Decimal::ZERO)));
+
+                candidates.push(PriceCandidate {
+                    start: scan_start,
+                    end: price_end,
+                    value: n,
+                });
+            }
+        }
+
+        i = num_end;
+    }
+
+    if candidates.is_empty() {
+        // Fallback: word-by-word from right
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 2 {
+            return None;
+        }
+
+        for end_offset in 0..4.min(parts.len()) {
+            let idx = parts.len() - 1 - end_offset;
+            let candidate = parts[idx];
+
+            if known_units.contains(&candidate.to_lowercase().as_str()) {
+                continue;
+            }
+
+            let price_str = candidate
+                .trim_start_matches('₹')
+                .trim_start_matches("Rs.")
+                .trim_start_matches("Rs")
+                .trim_end_matches("/-")
+                .trim_end_matches("/=")
+                .trim_end_matches("/")
+                .trim_end_matches("-")
+                .trim_end_matches('.');
+
+            if let Ok(price_num) = price_str.replace(",", "").parse::<f64>() {
+                if price_num > 0.0 && price_num < 100_000_000.0 {
+                    let byte_pos = line.find(candidate).unwrap_or(0);
+                    candidates.push(PriceCandidate {
+                        start: byte_pos,
+                        end: byte_pos + candidate.len(),
+                        value: price_num,
+                    });
+                    break;
                 }
             }
         }
     }
-    
-    None
+
+    // Pick the rightmost price as the item price (closest to end is usually the price)
+    let best = candidates.last()?;
+    let price_start = best.start;
+    let price_end = best.end;
+    let price_num = best.value;
+
+    // Build product name: everything before the price + after the price
+    let mut name = String::new();
+    if price_start > 0 {
+        name.push_str(line[..price_start].trim());
+    }
+    if price_end < line.len() {
+        let after = line[price_end..].trim();
+        if !name.is_empty() && !after.is_empty() {
+            name.push(' ');
+        }
+        name.push_str(after);
+    }
+    name = name.trim().to_string();
+
+    // Strip leading number/index like "1.", "1)", "(1)"
+    let first_word: &str = name.split_whitespace().next().unwrap_or("");
+    let stripped_first = first_word
+        .trim_end_matches('.')
+        .trim_end_matches(')')
+        .trim_start_matches('(');
+    if !stripped_first.is_empty()
+        && stripped_first.chars().all(|c| c.is_ascii_digit())
+        && name.split_whitespace().count() > 1
+    {
+        name = name[first_word.len()..].trim().to_string();
+    }
+
+    // Remove trailing units from name
+    let lower = name.to_lowercase();
+    for unit in &known_units {
+        if lower.ends_with(&format!(" {}", unit)) {
+            name = name[..name.len() - unit.len() - 1].trim().to_string();
+            break;
+        }
+        if lower == *unit {
+            name.clear();
+            break;
+        }
+    }
+
+    // Strip trailing punctuation
+    name = name.trim_end_matches(|c: char| c == ',' || c == ';' || c == '/' || c == '-' || c == '.' || c == '(' || c == ')').to_string();
+
+    if name.len() >= 2 {
+        let price = Decimal::try_from(price_num).unwrap_or(Decimal::ZERO);
+        Some((name, price))
+    } else {
+        None
+    }
 }
