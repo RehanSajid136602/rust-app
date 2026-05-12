@@ -1,5 +1,5 @@
 <template>
-  <div class="min-h-screen flex">
+  <div id="app-content" class="min-h-screen flex">
     <!-- Sidebar -->
     <aside class="w-64 bg-white border-r border-gray-200">
       <div class="p-6">
@@ -37,11 +37,18 @@
       </div>
     </main>
   </div>
+
+  <!-- Print Template (hidden, shown only during print) -->
+  <div id="print-container" class="print-only">
+    <InvoicePrintTemplate :data="printData" />
+  </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
+import InvoicePrintTemplate from './components/InvoicePrintTemplate.vue'
+import { printData } from './composables/usePrint'
 
 const route = useRoute()
 

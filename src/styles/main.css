@@ -59,3 +59,40 @@ body {
 @utility table-row {
   @apply hover:bg-gray-50;
 }
+
+/* Print styles */
+.print-only {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 10mm 12mm;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  #app-content {
+    display: none !important;
+  }
+
+  #print-container {
+    display: block !important;
+  }
+
+  .print-only {
+    display: block;
+  }
+
+  tr {
+    page-break-inside: avoid;
+  }
+
+  img {
+    page-break-inside: avoid;
+    max-width: 100% !important;
+  }
+}

@@ -289,10 +289,9 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { save } from '@tauri-apps/plugin-dialog'
-import { open as shellOpen } from '@tauri-apps/plugin-shell'
 import AutocompleteLineEdit from '../components/AutocompleteLineEdit.vue'
 import type { Suggestion } from '../components/AutocompleteLineEdit.vue'
+import { printData } from '../composables/usePrint'
 
 interface InvoiceItem {
   id?: number
@@ -529,24 +528,31 @@ const deleteInvoice = async (id: number) => {
 
 const exportPdf = async () => {
   if (!editing.value) {
-    // For new invoices, save first
     alert('Please save the invoice before exporting.')
     return
   }
   recalc()
-  const defaultName = form.invoice_number.replace(/[\\/:*?"<>|]/g, '-')
-  const filePath = await save({
-    defaultPath: `${defaultName}.pdf`,
-    filters: [{ name: 'PDF', extensions: ['pdf'] }],
-  })
-  if (!filePath) return
   try {
-    const saved = await invoke<string>('export_invoice_pdf', {
-      invoice: { ...form },
-      outputPath: filePath,
-    })
-    const open = confirm(`PDF exported to:\n${saved}\n\nOpen file?`)
-    if (open) await shellOpen(saved)
+    const settings = await invoke<any>('get_company_settings')
+    printData.value = {
+      docType: 'Invoice',
+      date: form.invoice_date,
+      refNumber: form.invoice_number,
+      salutation: settings?.salutation || 'Respected Sir,',
+      bodyText: settings?.body_text || '',
+      items: form.items.map(item => ({
+        sno: item.sno,
+        item_name: item.item_name,
+        quantity: item.quantity,
+        price_per_unit: item.price_per_unit,
+      })),
+      subtotal: form.subtotal,
+      adjustmentLabel: form.adjustment_label || '',
+      adjustmentAmount: form.adjustment_amount || 0,
+      total: form.total,
+    }
+    await nextTick()
+    setTimeout(() => window.print(), 500)
   } catch (e) {
     alert('Export failed: ' + e)
   }
