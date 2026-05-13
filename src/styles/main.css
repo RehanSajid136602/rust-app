@@ -1,18 +1,29 @@
 @import "tailwindcss";
 
-/* Custom theme colors */
+/* Custom theme colors — Zahra Enterprises brand */
 @theme {
-  --color-primary-50: #eff6ff;
-  --color-primary-100: #dbeafe;
-  --color-primary-200: #bfdbfe;
-  --color-primary-300: #93c5fd;
-  --color-primary-400: #60a5fa;
-  --color-primary-500: #3b82f6;
-  --color-primary-600: #2563eb;
-  --color-primary-700: #1d4ed8;
-  --color-primary-800: #1e40af;
-  --color-primary-900: #1e3a8a;
-  
+  --color-primary-50: #e8ecf2;
+  --color-primary-100: #d0d8e4;
+  --color-primary-200: #a1b1c9;
+  --color-primary-300: #7289af;
+  --color-primary-400: #436294;
+  --color-primary-500: #1a2540;
+  --color-primary-600: #151e33;
+  --color-primary-700: #101726;
+  --color-primary-800: #0a0f19;
+  --color-primary-900: #05080d;
+
+  --color-accent-50: #fdf2e9;
+  --color-accent-100: #fae5d3;
+  --color-accent-200: #f5cba7;
+  --color-accent-300: #f0b17b;
+  --color-accent-400: #eb974f;
+  --color-accent-500: #e67d23;
+  --color-accent-600: #e05a2b;
+  --color-accent-700: #b34822;
+  --color-accent-800: #86361a;
+  --color-accent-900: #592411;
+
   --color-success: #22c55e;
   --color-warning: #f59e0b;
   --color-danger: #ef4444;
@@ -29,19 +40,19 @@ body {
 }
 
 @utility btn-primary {
-  @apply bg-primary-600 hover:bg-primary-700 text-white font-medium px-4 py-2 rounded-lg transition-colors;
+  @apply bg-accent-600 hover:bg-accent-700 text-white font-medium px-4 py-2 rounded-lg transition-colors cursor-pointer;
 }
 
 @utility btn-secondary {
-  @apply bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-4 py-2 rounded-lg transition-colors;
+  @apply bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium px-4 py-2 rounded-lg transition-colors cursor-pointer;
 }
 
 @utility btn-secondary-outline {
-  @apply border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium px-4 py-2 rounded-lg transition-colors;
+  @apply border border-gray-300 hover:bg-gray-50 text-gray-700 font-medium px-4 py-2 rounded-lg transition-colors cursor-pointer;
 }
 
 @utility input {
-  @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent;
+  @apply w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent-500 focus:border-transparent;
 }
 
 @utility table-container {

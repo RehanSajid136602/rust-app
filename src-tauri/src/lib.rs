@@ -96,6 +96,7 @@ pub fn run() {
             commands::import_products_pdf,
             commands::export_invoice_pdf,
             commands::export_quotation_pdf,
+            commands::export_invoices_excel,
             commands::generate_ref_number,
             commands::open_file,
             commands::open_folder,

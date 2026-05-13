@@ -110,11 +110,54 @@
       </div>
     </div>
 
+    <!-- Charts Section -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- Monthly Revenue Bar Chart -->
+      <div class="card">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">Monthly Revenue (Last 6 Months)</h3>
+        <div class="h-64">
+          <Bar v-if="monthlyRevenue" :data="monthlyRevenue" :options="barOptions" />
+          <p v-else class="text-center text-gray-400 py-16">No revenue data available.</p>
+        </div>
+      </div>
+
+      <!-- Payment Status Pie Chart -->
+      <div class="card">
+        <h3 class="text-lg font-semibold text-gray-800 mb-4">Payment Status</h3>
+        <div class="h-64 flex items-center justify-center">
+          <div v-if="paymentData" class="w-56">
+            <Doughnut :data="paymentData" :options="doughnutOptions" />
+          </div>
+          <p v-else class="text-center text-gray-400">No invoice data available.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top Clients -->
+    <div class="card">
+      <h3 class="text-lg font-semibold text-gray-800 mb-4">Top 5 Clients by Revenue</h3>
+      <div v-if="topClients.length > 0" class="space-y-3">
+        <div v-for="(c, idx) in topClients" :key="c.name" class="flex items-center justify-between py-2 border-b border-gray-100 last:border-0">
+          <div class="flex items-center space-x-3">
+            <span class="text-sm font-bold text-gray-400 w-6">{{ idx + 1 }}</span>
+            <span class="text-sm font-medium text-gray-900">{{ c.name }}</span>
+          </div>
+          <div class="flex items-center space-x-6">
+            <div class="w-48 bg-gray-100 rounded-full h-2">
+              <div class="bg-accent-600 h-2 rounded-full" :style="{ width: c.percentage + '%' }"></div>
+            </div>
+            <span class="text-sm font-semibold text-gray-800 w-24 text-right">{{ fmt(c.total) }}</span>
+          </div>
+        </div>
+      </div>
+      <p v-else class="text-center text-gray-400 py-4 text-sm">No client data available.</p>
+    </div>
+
     <!-- Quick Actions -->
     <div class="card">
       <h3 class="text-lg font-semibold text-gray-800 mb-4">Quick Actions</h3>
       <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <router-link to="/invoices" class="p-4 border border-gray-200 rounded-lg hover:border-primary-300 hover:bg-primary-50 transition-colors text-center">
+        <router-link to="/invoices" class="p-4 border border-gray-200 rounded-lg hover:border-accent-300 hover:bg-accent-50 transition-colors text-center">
           <span class="text-2xl block mb-1">📄</span>
           <span class="text-sm font-medium text-gray-700">New Invoice</span>
         </router-link>
@@ -138,6 +181,19 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { Bar, Doughnut } from 'vue-chartjs'
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  ArcElement,
+  Title,
+  Tooltip,
+  Legend,
+} from 'chart.js'
+
+ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Title, Tooltip, Legend)
 
 interface Invoice {
   id: number
@@ -146,6 +202,8 @@ interface Invoice {
   invoice_date: string
   total: number
   status: string
+  amount_paid: number
+  remaining_debt: number
 }
 
 interface Quotation {
@@ -166,6 +224,9 @@ const stats = ref({
 
 const recentInvoices = ref<Invoice[]>([])
 const recentQuotations = ref<Quotation[]>([])
+const monthlyRevenue = ref<any>(null)
+const paymentData = ref<any>(null)
+const topClients = ref<{ name: string; total: number; percentage: number }[]>([])
 
 const fmt = (n: number | undefined): string => {
   if (n === undefined || n === null) n = 0
@@ -192,6 +253,96 @@ const statusBadgeQuotation = (s: string): string => {
   return map[s] || 'bg-gray-100 text-gray-600'
 }
 
+const barOptions = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: { legend: { display: false } },
+  scales: {
+    y: { beginAtZero: true, ticks: { callback: (v: any) => 'Rs. ' + v.toLocaleString('en-IN') } },
+  },
+}
+
+const doughnutOptions = {
+  responsive: true,
+  maintainAspectRatio: true,
+  plugins: {
+    legend: { position: 'bottom' as const },
+  },
+}
+
+const computeCharts = (allInvoices: Invoice[]) => {
+  // Monthly Revenue
+  const now = new Date()
+  const months: string[] = []
+  const revenue: number[] = []
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
+    months.push(d.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' }))
+    revenue.push(0)
+  }
+
+  let totalPaid = 0
+  let totalUnpaid = 0
+  const clientTotals = new Map<string, number>()
+
+  for (const inv of allInvoices) {
+    // Monthly revenue
+    if (inv.invoice_date) {
+      const parts = inv.invoice_date.split('-')
+      if (parts.length >= 2) {
+        const invDate = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, 1)
+        for (let i = 5; i >= 0; i--) {
+          const monthDate = new Date(now.getFullYear(), now.getMonth() - i, 1)
+          if (invDate.getFullYear() === monthDate.getFullYear() && invDate.getMonth() === monthDate.getMonth()) {
+            revenue[5 - i] += inv.total
+            break
+          }
+        }
+      }
+    }
+
+    // Payment status
+    if (inv.status === 'paid') totalPaid += inv.total
+    else totalUnpaid += inv.remaining_debt || inv.total - (inv.amount_paid || 0)
+
+    // Client totals
+    const prev = clientTotals.get(inv.client_name) || 0
+    clientTotals.set(inv.client_name, prev + inv.total)
+  }
+
+  monthlyRevenue.value = {
+    labels: months,
+    datasets: [{
+      label: 'Revenue',
+      data: revenue,
+      backgroundColor: '#1a2540',
+      borderRadius: 4,
+    }],
+  }
+
+  if (totalPaid > 0 || totalUnpaid > 0) {
+    paymentData.value = {
+      labels: ['Paid', 'Outstanding'],
+      datasets: [{
+        data: [totalPaid, totalUnpaid],
+        backgroundColor: ['#22c55e', '#ef4444'],
+        borderWidth: 0,
+      }],
+    }
+  }
+
+  // Top 5 clients
+  const sorted = [...clientTotals.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+  const maxTotal = sorted.length > 0 ? sorted[0][1] : 1
+  topClients.value = sorted.map(([name, total]) => ({
+    name,
+    total,
+    percentage: Math.round((total / maxTotal) * 100),
+  }))
+  }
+
 const loadDashboard = async () => {
   try {
     const [invoices, quotations, balances, clients] = await Promise.all([
@@ -204,7 +355,6 @@ const loadDashboard = async () => {
     recentInvoices.value = invoices
     recentQuotations.value = quotations
 
-    // Get total invoice count from full load
     const allInvoices = await invoke<Invoice[]>('get_all_invoices', { limit: 1000, offset: 0 })
     const allQuotations = await invoke<Quotation[]>('get_all_quotations', { limit: 1000, offset: 0 })
 
@@ -216,6 +366,8 @@ const loadDashboard = async () => {
       clientCount: clients.length,
       outstanding,
     }
+
+    computeCharts(allInvoices)
   } catch (e) {
     console.error('Dashboard load error:', e)
   }

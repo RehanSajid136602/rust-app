@@ -58,6 +58,7 @@ const navItems = [
   { path: '/clients', name: 'Clients', icon: '👥' },
   { path: '/invoices', name: 'Invoices', icon: '📄' },
   { path: '/quotations', name: 'Quotations', icon: '📋' },
+  { path: '/ledger', name: 'Ledger', icon: '📒' },
   { path: '/settings', name: 'Settings', icon: '⚙️' },
 ]
 

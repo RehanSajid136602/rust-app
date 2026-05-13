@@ -11,7 +11,12 @@
           <option value="unpaid">Unpaid</option>
         </select>
       </div>
-      <button @click="openCreateModal" class="btn-primary">+ New Invoice</button>
+      <div class="flex items-center space-x-3">
+        <button @click="exportExcel" class="btn-secondary-outline">
+          📊 Export Excel
+        </button>
+        <button @click="openCreateModal" class="btn-primary">+ New Invoice</button>
+      </div>
     </div>
 
     <!-- Invoice List -->
@@ -247,8 +252,8 @@
         </div>
 
         <div class="flex justify-end space-x-3 p-6 border-t">
-          <button v-if="editing" @click="exportPdf" class="btn-secondary-outline">
-            Export PDF
+          <button @click="exportPdf" class="btn-secondary-outline">
+            🖨 Print
           </button>
           <button @click="closeForm" class="btn-secondary">Cancel</button>
           <button @click="saveInvoice" class="btn-primary" :disabled="saving">
@@ -295,10 +300,10 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { getCurrentWindow } from '@tauri-apps/api/window'
+import { save } from '@tauri-apps/plugin-dialog'
+import { desktopDir } from '@tauri-apps/api/path'
 import AutocompleteLineEdit from '../components/AutocompleteLineEdit.vue'
 import type { Suggestion } from '../components/AutocompleteLineEdit.vue'
-import { printData } from '../composables/usePrint'
 import ExportSuccessDialog from '../components/ExportSuccessDialog.vue'
 
 interface InvoiceItem {
@@ -529,6 +534,17 @@ const savePayment = async () => {
     inv.remaining_debt = inv.total - inv.amount_paid
     inv.status = inv.remaining_debt <= 0 ? 'paid' : 'partial'
     await invoke('update_invoice', { invoice: inv })
+
+    // Create credit ledger entry for the payment
+    if (inv.client_id) {
+      await invoke('add_credit_entry', {
+        clientId: inv.client_id,
+        amount: paymentForm.amount,
+        description: `Payment for ${inv.invoice_number}`,
+        date: paymentForm.date,
+      })
+    }
+
     showPayment.value = false; await loadInvoices()
   } catch (e) { alert('Error: ' + e) }
 }
@@ -539,37 +555,39 @@ const deleteInvoice = async (id: number) => {
 }
 
 const exportPdf = async () => {
-  if (!editing.value) {
-    alert('Please save the invoice before exporting.')
+  if (!form.client_name || form.items.length === 0) {
+    alert('Please add a client and at least one item before printing.')
     return
   }
   recalc()
   try {
-    const settings = await invoke<any>('get_company_settings')
-    printData.value = {
-      docType: 'Invoice',
-      date: form.invoice_date,
-      refNumber: form.invoice_number,
-      salutation: settings?.salutation || 'Respected Sir,',
-      bodyText: settings?.body_text || '',
-      items: form.items.map(item => ({
-        sno: item.sno,
-        item_name: item.item_name,
-        quantity: item.quantity,
-        price_per_unit: item.price_per_unit,
-      })),
-      subtotal: form.subtotal,
-      adjustmentLabel: form.adjustment_label || '',
-      adjustmentAmount: form.adjustment_amount || 0,
-      total: form.total,
-    }
-    const title = `Invoice ${form.invoice_number}`
-    document.title = title
-    await getCurrentWindow().setTitle(title)
-    await nextTick()
-    setTimeout(() => window.print(), 500)
+    const desktop = await desktopDir()
+    const name = (form.invoice_number || form.ref_number || 'invoice').replace(/[\\/:*?"<>|]/g, '-')
+    const path = `${desktop}${name}.pdf`
+    await invoke<string>('export_invoice_pdf', { invoice: { ...form }, outputPath: path })
+    exportedPath.value = path
   } catch (e) {
-    alert('Export failed: ' + e)
+    alert('Print failed: ' + e)
+  }
+}
+
+const exportExcel = async () => {
+  try {
+    let outPath: string | null
+    try {
+      const desktop = await desktopDir()
+      outPath = await save({
+        defaultPath: `${desktop}invoices_export.xlsx`,
+        filters: [{ name: 'Excel Files', extensions: ['xlsx'] }],
+      })
+    } catch {
+      outPath = null
+    }
+    if (!outPath) return
+    await invoke<string>('export_invoices_excel', { outputPath: outPath })
+    exportedPath.value = outPath
+  } catch (e) {
+    alert('Excel export failed: ' + e)
   }
 }
 

@@ -1,6 +1,7 @@
 //! Invoice repository for database operations.
 
 use rusqlite::{Connection, params_from_iter};
+use chrono::Utc;
 use crate::models::{Invoice, InvoiceItem, PaymentStatus};
 use crate::errors::{AppResult, AppError};
 use crate::db_types::{f64_to_decimal, decimal_to_f64};
@@ -155,7 +156,28 @@ impl<'a> InvoiceRepository<'a> {
     /// Create a new invoice with items
     pub fn create(&mut self, invoice: &Invoice) -> AppResult<i32> {
         let tx = self.conn.transaction()?;
-        
+
+        // Auto-generate invoice number if empty
+        let invoice_number = if invoice.invoice_number.trim().is_empty() {
+            // Query settings prefix
+            let prefix: String = tx.query_row(
+                "SELECT invoice_prefix FROM company_settings WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )?;
+            let year = Utc::now().format("%Y").to_string().parse::<u32>().unwrap_or(2026);
+            let pattern = format!("{}-{}-%", prefix, year);
+            let max_num: Option<i32> = tx.query_row(
+                "SELECT COALESCE(MAX(CAST(SUBSTR(invoice_number, -4) AS INTEGER)), 0) + 1
+                 FROM invoices WHERE invoice_number LIKE ?",
+                rusqlite::params![pattern],
+                |row| row.get(0),
+            ).ok();
+            format!("{}-{}-{:04}", prefix, year, max_num.unwrap_or(1))
+        } else {
+            invoice.invoice_number.clone()
+        };
+
         let subtotal = decimal_to_f64(&invoice.subtotal);
         let tax_total = decimal_to_f64(&invoice.tax_total);
         let discount_total = decimal_to_f64(&invoice.discount_total);
@@ -167,7 +189,7 @@ impl<'a> InvoiceRepository<'a> {
         let status_str = invoice.status.as_str();
         
         let params: Vec<&dyn rusqlite::ToSql> = vec![
-            &invoice.invoice_number, &invoice.ref_number, &invoice.client_id,
+            &invoice_number, &invoice.ref_number, &invoice.client_id,
             &invoice.client_name, &invoice.client_address, &invoice.invoice_date,
             &invoice.due_date, &subtotal, &tax_total,
             &discount_total, &grand_total, &amount_paid,
@@ -208,7 +230,19 @@ impl<'a> InvoiceRepository<'a> {
             "UPDATE company_settings SET next_invoice_number = next_invoice_number + 1",
             [],
         )?;
-        
+
+        // Create ledger debit entry for this invoice
+        if let Some(cid) = invoice.client_id {
+            let debit_desc = format!("Invoice {}", invoice_number);
+            let debit_amount = decimal_to_f64(&invoice.total);
+            let today = Utc::now().format("%Y-%m-%d").to_string();
+            tx.execute(
+                "INSERT INTO client_ledgers (client_id, date, description, debit, credit, balance, invoice_id)
+                 VALUES (?, ?, ?, ?, 0, ?, ?)",
+                rusqlite::params![cid, today, debit_desc, debit_amount, debit_amount, invoice_id],
+            )?;
+        }
+
         tx.commit()?;
         
         Ok(invoice_id)

@@ -11,6 +11,7 @@ import Clients from './pages/Clients.vue'
 import Invoices from './pages/Invoices.vue'
 import Quotations from './pages/Quotations.vue'
 import Settings from './pages/Settings.vue'
+import Ledger from './pages/Ledger.vue'
 
 const routes = [
   { path: '/', name: 'Dashboard', component: Dashboard },
@@ -18,6 +19,7 @@ const routes = [
   { path: '/clients', name: 'Clients', component: Clients },
   { path: '/invoices', name: 'Invoices', component: Invoices },
   { path: '/quotations', name: 'Quotations', component: Quotations },
+  { path: '/ledger', name: 'Ledger', component: Ledger },
   { path: '/settings', name: 'Settings', component: Settings },
 ]
 

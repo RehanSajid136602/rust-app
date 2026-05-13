@@ -187,8 +187,8 @@
         </div>
 
         <div class="flex justify-end space-x-3 p-6 border-t">
-          <button v-if="editing" @click="exportPdf" class="btn-secondary-outline">
-            Export PDF
+          <button @click="exportPdf" class="btn-secondary-outline">
+            🖨 Print
           </button>
           <button @click="closeForm" class="btn-secondary">Cancel</button>
           <button @click="saveQuotation" class="btn-primary" :disabled="saving">
@@ -210,10 +210,9 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
-import { getCurrentWindow } from '@tauri-apps/api/window'
+import { desktopDir } from '@tauri-apps/api/path'
 import AutocompleteLineEdit from '../components/AutocompleteLineEdit.vue'
 import type { Suggestion } from '../components/AutocompleteLineEdit.vue'
-import { printData } from '../composables/usePrint'
 import ExportSuccessDialog from '../components/ExportSuccessDialog.vue'
 
 interface QuotationItem {
@@ -373,37 +372,19 @@ const deleteQuotation = async (id: number) => {
 }
 
 const exportPdf = async () => {
-  if (!editing.value) {
-    alert('Please save the quotation before exporting.')
+  if (!form.client_name || form.items.length === 0) {
+    alert('Please add a client and at least one item before printing.')
     return
   }
   recalc()
   try {
-    const settings = await invoke<any>('get_company_settings')
-    printData.value = {
-      docType: 'Quotation',
-      date: form.quotation_date,
-      refNumber: form.quotation_number,
-      salutation: settings?.salutation || 'Respected Sir,',
-      bodyText: settings?.body_text || '',
-      items: form.items.map(item => ({
-        sno: item.sno,
-        item_name: item.item_name,
-        quantity: item.quantity,
-        price_per_unit: item.price_per_unit,
-      })),
-      subtotal: form.subtotal,
-      adjustmentLabel: form.adjustment_label || '',
-      adjustmentAmount: form.adjustment_amount || 0,
-      total: form.total,
-    }
-    const title = `Quotation ${form.quotation_number}`
-    document.title = title
-    await getCurrentWindow().setTitle(title)
-    await nextTick()
-    setTimeout(() => window.print(), 500)
+    const desktop = await desktopDir()
+    const name = (form.quotation_number || form.ref_number || 'quotation').replace(/[\\/:*?"<>|]/g, '-')
+    const path = `${desktop}${name}.pdf`
+    await invoke<string>('export_quotation_pdf', { quotation: { ...form }, outputPath: path })
+    exportedPath.value = path
   } catch (e) {
-    alert('Export failed: ' + e)
+    alert('Print failed: ' + e)
   }
 }
 

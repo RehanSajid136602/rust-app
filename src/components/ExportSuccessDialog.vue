@@ -5,7 +5,7 @@
         ✓
       </div>
 
-      <h3 class="text-lg font-bold mb-2">PDF Exported Successfully</h3>
+      <h3 class="text-lg font-bold mb-2">{{ title || 'File Exported Successfully' }}</h3>
 
       <p class="bg-gray-100 rounded-md py-2 px-3 text-xs text-gray-700 break-all mb-6">
         📄 {{ fileName }}
@@ -39,6 +39,7 @@ import { invoke } from '@tauri-apps/api/core'
 
 const props = defineProps<{
   filePath: string
+  title?: string
 }>()
 
 const emit = defineEmits<{

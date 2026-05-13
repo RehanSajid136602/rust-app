@@ -1,6 +1,7 @@
 //! Quotation repository for database operations.
 
 use rusqlite::{Connection, params_from_iter};
+use chrono::Utc;
 use crate::models::{Quotation, QuotationItem};
 use crate::errors::{AppResult, AppError};
 use crate::db_types::{f64_to_decimal, decimal_to_f64};
@@ -135,7 +136,27 @@ impl<'a> QuotationRepository<'a> {
     /// Create a new quotation with items
     pub fn create(&mut self, quotation: &Quotation) -> AppResult<i32> {
         let tx = self.conn.transaction()?;
-        
+
+        // Auto-generate quotation number if empty
+        let quotation_number = if quotation.quotation_number.trim().is_empty() {
+            let prefix: String = tx.query_row(
+                "SELECT quotation_prefix FROM company_settings WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )?;
+            let year = Utc::now().format("%Y").to_string().parse::<u32>().unwrap_or(2026);
+            let pattern = format!("{}-{}-%", prefix, year);
+            let max_num: Option<i32> = tx.query_row(
+                "SELECT COALESCE(MAX(CAST(SUBSTR(quotation_number, -4) AS INTEGER)), 0) + 1
+                 FROM quotations WHERE quotation_number LIKE ?",
+                rusqlite::params![pattern],
+                |row| row.get(0),
+            ).ok();
+            format!("{}-{}-{:04}", prefix, year, max_num.unwrap_or(1))
+        } else {
+            quotation.quotation_number.clone()
+        };
+
         let subtotal = decimal_to_f64(&quotation.subtotal);
         let tax_total = decimal_to_f64(&quotation.tax_total);
         let discount_total = decimal_to_f64(&quotation.discount_total);
@@ -144,7 +165,7 @@ impl<'a> QuotationRepository<'a> {
         let total = decimal_to_f64(&quotation.total);
         
         let params: Vec<&dyn rusqlite::ToSql> = vec![
-            &quotation.quotation_number, &quotation.ref_number, &quotation.client_id,
+            &quotation_number, &quotation.ref_number, &quotation.client_id,
             &quotation.client_name, &quotation.client_address, &quotation.quotation_date,
             &quotation.valid_until, &subtotal, &tax_total,
             &discount_total, &grand_total, &quotation.adjustment_label,
