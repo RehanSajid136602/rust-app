@@ -39,9 +39,13 @@ pub fn run() {
     // Run migrations
     if let Err(e) = run_migrations(&db_conn) {
         eprintln!("Failed to run migrations: {}", e);
-        // Continue anyway - migrations might fail if DB already exists
     }
-    
+
+    // Rebuild ledger entries for any missing invoice-ledger links
+    if let Err(e) = database::rebuild_ledger_if_needed(&db_conn) {
+        eprintln!("Ledger rebuild note: {}", e);
+    }
+
     // Create app state
     let app_state = AppState {
         db: db_conn,
@@ -92,6 +96,7 @@ pub fn run() {
             commands::add_debit_entry,
             commands::add_credit_entry,
             commands::get_clients_with_balance,
+            commands::rebuild_ledger,
             commands::import_products_excel,
             commands::import_products_pdf,
             commands::export_invoice_pdf,

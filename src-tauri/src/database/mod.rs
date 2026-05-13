@@ -80,6 +80,46 @@ pub fn seed_defaults(db: &Arc<Mutex<Connection>>) -> AppResult<()> {
     Ok(())
 }
 
+/// Rebuild missing ledger entries from existing invoices on startup.
+/// Creates debit entries for invoices and credit entries for payments.
+pub fn rebuild_ledger_if_needed(db: &Arc<Mutex<Connection>>) -> AppResult<()> {
+    let conn = db.lock().unwrap();
+    
+    // Find invoices missing debit ledger entries
+    let rows: Vec<(i32, i32, String, f64, String, f64)> = {
+        let mut stmt = conn.prepare(
+            "SELECT i.id, i.client_id, i.invoice_number, i.total, i.invoice_date, i.amount_paid
+             FROM invoices i
+             LEFT JOIN client_ledgers cl ON cl.invoice_id = i.id AND cl.debit > 0
+             WHERE i.client_id IS NOT NULL AND cl.id IS NULL"
+        )?;
+        stmt.query_map([], |row| Ok((
+            row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?,
+        )))?
+        .filter_map(|r| r.ok())
+        .collect()
+    };
+    
+    for (inv_id, client_id, inv_num, total, date, amount_paid) in &rows {
+        conn.execute(
+            "INSERT INTO client_ledgers (client_id, date, description, debit, credit, balance, invoice_id)
+             VALUES (?1, ?2, ?3, ?4, 0, ?4, ?5)",
+            rusqlite::params![client_id, date, format!("Invoice {}", inv_num), total, inv_id],
+        )?;
+        
+        // If invoice has payments, also create credit entry
+        if *amount_paid > 0.0 {
+            conn.execute(
+                "INSERT INTO client_ledgers (client_id, date, description, debit, credit, balance, invoice_id)
+                 VALUES (?1, ?2, ?3, 0, ?4, ?4, ?5)",
+                rusqlite::params![client_id, date, format!("Payment for {}", inv_num), amount_paid, inv_id],
+            )?;
+        }
+    }
+    
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
