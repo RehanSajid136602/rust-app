@@ -9,28 +9,48 @@
           <input v-model="settings.company_name" type="text" class="input" />
         </div>
         <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Tagline</label>
+          <input v-model="settings.tagline" type="text" class="input" placeholder="Deals in lab Consumables, Reagents & Medical Equipments." />
+        </div>
+        <div>
           <label class="block text-sm font-medium text-gray-700 mb-1">Address</label>
-          <textarea v-model="settings.address" class="input" rows="3"></textarea>
+          <textarea v-model="settings.office_address" class="input" rows="3"></textarea>
         </div>
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Phone</label>
-            <input v-model="settings.phone" type="text" class="input" />
+            <label class="block text-sm font-medium text-gray-700 mb-1">Phone 1</label>
+            <input v-model="settings.phone1" type="text" class="input" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
-            <input v-model="settings.email" type="email" class="input" />
+            <label class="block text-sm font-medium text-gray-700 mb-1">Phone 2</label>
+            <input v-model="settings.phone2" type="text" class="input" />
           </div>
         </div>
         <div class="grid grid-cols-2 gap-4">
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">GST Number</label>
-            <input v-model="settings.gst_number" type="text" class="input" />
+            <label class="block text-sm font-medium text-gray-700 mb-1">NTN Number</label>
+            <input v-model="settings.ntn_number" type="text" class="input" />
           </div>
           <div>
-            <label class="block text-sm font-medium text-gray-700 mb-1">PAN Number</label>
-            <input v-model="settings.pan_number" type="text" class="input" />
+            <label class="block text-sm font-medium text-gray-700 mb-1">Invoice Prefix</label>
+            <input v-model="settings.invoice_prefix" type="text" class="input" placeholder="ZE" />
           </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Quotation Prefix</label>
+          <input v-model="settings.quotation_prefix" type="text" class="input" placeholder="QT" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Salutation</label>
+          <input v-model="settings.salutation" type="text" class="input" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Body Text</label>
+          <textarea v-model="settings.body_text" class="input" rows="2"></textarea>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+          <input v-model="settings.email" type="email" class="input" />
         </div>
         
         <div class="flex justify-end pt-4">
@@ -47,11 +67,20 @@ import { invoke } from '@tauri-apps/api/core'
 
 interface CompanySettings {
   company_name: string
-  address: string
-  phone: string
+  tagline: string
+  ntn_number: string
+  office_address: string
+  phone1: string
+  phone2: string
   email: string
   gst_number: string
   pan_number: string
+  invoice_prefix: string
+  quotation_prefix: string
+  salutation: string
+  body_text: string
+  banner_color: string
+  footer_color: string
 }
 
 const settings = ref<CompanySettings | null>(null)

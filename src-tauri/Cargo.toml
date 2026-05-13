@@ -48,6 +48,8 @@ genpdf = { version = "0.2", features = ["images"] }
 
 # Image processing for PDF header/footer resizing
 image = "0.25"
+# Aliased image 0.23 for genpdf 0.2 add_image compatibility
+image23 = { package = "image", version = "0.23" }
 
 # PDF text extraction
 pdf-extract = "0.7"

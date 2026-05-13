@@ -37,7 +37,7 @@ impl CompanySettings {
             phone2: "0345-8510130".to_string(),
             email: "zahraenterprises4@gmail.com".to_string(),
             logo_path: String::new(),
-            invoice_prefix: "ZE #".to_string(),
+            invoice_prefix: "ZE".to_string(),
             next_invoice_number: 1,
             quotation_prefix: "QT #".to_string(),
             next_quotation_number: 1,

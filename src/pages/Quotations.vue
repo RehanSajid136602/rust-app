@@ -123,7 +123,7 @@
                   </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
-                  <tr v-for="(item, idx) in form.items" :key="idx">
+                  <tr v-for="(item, idx) in form.items" :key="`qitem_${idx}_${item.item_name}`">
                     <td class="px-2 py-2 text-sm text-gray-500">{{ idx + 1 }}</td>
                     <td class="px-2 py-2 relative">
                       <AutocompleteLineEdit
@@ -257,6 +257,10 @@ const form = reactive<Quotation>(emptyForm())
 
 const fmt = (n: number | undefined): string => {
   if (n === undefined || n === null) n = 0
+  // Show integer without decimals if whole number
+  if (n % 1 === 0) {
+    return new Intl.NumberFormat('en-IN').format(n)
+  }
   return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2 }).format(n)
 }
 

@@ -35,13 +35,26 @@ impl<'a> InvoiceService<'a> {
     /// Create a new invoice
     pub fn create(&mut self, invoice: &Invoice) -> AppResult<i32> {
         self.validate_invoice(invoice)?;
-        self.repo.create(invoice)
+        let mut normalized = invoice.clone();
+        self.normalize_items(&mut normalized);
+        self.repo.create(&normalized)
     }
     
     /// Update an existing invoice
     pub fn update(&mut self, invoice: &Invoice) -> AppResult<()> {
         self.validate_invoice(invoice)?;
-        self.repo.update(invoice)
+        let mut normalized = invoice.clone();
+        self.normalize_items(&mut normalized);
+        self.repo.update(&normalized)
+    }
+    
+    /// Compute item totals if not set
+    fn normalize_items(&self, invoice: &mut Invoice) {
+        for item in &mut invoice.items {
+            if item.total_price == rust_decimal::Decimal::ZERO {
+                item.calculate_total();
+            }
+        }
     }
     
     /// Delete an invoice

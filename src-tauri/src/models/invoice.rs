@@ -68,11 +68,9 @@ impl InvoiceItem {
     }
     
     /// Calculate the total price for this item
-    /// Formula: (quantity * price) - discount + tax
+    /// Formula: quantity * price_per_unit (base amount before discount/tax)
     pub fn calculate_total(&mut self) {
-        let base = self.quantity * self.price_per_unit;
-        let after_discount = base - self.discount_amount;
-        self.total_price = after_discount + self.tax_amount;
+        self.total_price = self.quantity * self.price_per_unit;
     }
 }
 

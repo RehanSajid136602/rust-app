@@ -3,13 +3,21 @@
 use crate::models::{Invoice, Quotation, CompanySettings, PaymentStatus};
 use genpdf::{self, Alignment, Element as _};
 use genpdf::{elements, fonts, style};
+use genpdf::PageDecorator;
+use genpdf::render;
+use genpdf::error;
+use genpdf::Mm;
+use genpdf::Position;
+use genpdf::Scale;
+use genpdf::Rotation;
 use rust_decimal::Decimal;
-use image::GenericImageView;
+use image23::io::Reader as ImageReader23;
+use image23::imageops::FilterType;
+use image23::DynamicImage;
 
 const HEADER_BYTES: &[u8] = include_bytes!("../../../public/header.png");
-const FOOTER_BYTES: &[u8] = include_bytes!("../../../public/footer.png");
-const PHONE_ICON: &[u8] = include_bytes!("../../icons/phone.png");
-const EMAIL_ICON: &[u8] = include_bytes!("../../icons/email.png");
+const WHATSAPP_BYTES: &[u8] = include_bytes!("../../../public/whatsapp.png");
+const EMAIL_BYTES: &[u8] = include_bytes!("../../../public/email.png");
 const FONT_DIRS: &[&str] = &[
     "/usr/share/fonts/liberation",
     "/usr/share/fonts/truetype/liberation",
@@ -55,74 +63,197 @@ fn fmt_amount(n: Decimal) -> String {
         .rev()
         .collect::<String>();
     let sign = if whole < 0 { "-" } else { "" };
-    format!("{}{}.{:02}", sign, with_commas, frac)
+    // Show integer without decimals if whole number, otherwise 2 decimal places
+    if frac == 0 {
+        format!("{}{}", sign, with_commas)
+    } else {
+        format!("{}{}.{:02}", sign, with_commas, frac)
+    }
+}
+
+/// Format date from YYYY-MM-DD to DD-MM-YYYY
+fn fmt_date(date_str: &str) -> String {
+    if date_str.is_empty() {
+        return String::new();
+    }
+    // If already in DD-MM-YYYY format, return as-is
+    if date_str.contains('-') && date_str.len() == 10 {
+        let parts: Vec<&str> = date_str.split('-').collect();
+        if parts.len() == 3 && parts[0].len() == 2 {
+            // Already DD-MM-YYYY format
+            return date_str.to_string();
+        }
+        // Convert from YYYY-MM-DD to DD-MM-YYYY
+        if parts.len() == 3 && parts[0].len() == 4 {
+            return format!("{}-{}-{}", parts[2], parts[1], parts[0]);
+        }
+    }
+    date_str.to_string()
+}
+
+/// Convert image data to RGB PNG bytes (genpdf doesn't support alpha)
+fn img_to_rgb_png(data: &[u8]) -> Option<Vec<u8>> {
+    let img = image::load_from_memory(data).ok()?;
+    let rgb = img.to_rgb8();
+    let mut buf = std::io::Cursor::new(Vec::new());
+    rgb.write_to(&mut buf, image::ImageFormat::Png).ok()?;
+    Some(buf.into_inner())
+}
+
+/// Resize image to fit max width while maintaining aspect ratio, return RGB PNG bytes
+fn resize_to_fit(data: &[u8], max_width: u32) -> Option<Vec<u8>> {
+    let img = image::load_from_memory(data).ok()?;
+    let (w, h) = (img.width(), img.height());
+    if w <= max_width {
+        return img_to_rgb_png(data);
+    }
+    let ratio = max_width as f64 / w as f64;
+    let new_h = (h as f64 * ratio) as u32;
+    let resized = img.resize(max_width, new_h, image::imageops::FilterType::Lanczos3);
+    let rgb = resized.to_rgb8();
+    let mut buf = std::io::Cursor::new(Vec::new());
+    rgb.write_to(&mut buf, image::ImageFormat::Png).ok()?;
+    Some(buf.into_inner())
+}
+
+/// Load and resize an icon from embedded bytes to the given pixel dimensions
+fn decode_icon(data: &[u8], size: u32) -> Option<DynamicImage> {
+    let img = ImageReader23::new(std::io::Cursor::new(data))
+        .with_guessed_format().ok()?
+        .decode().ok()?;
+    Some(img.resize_exact(size, size, FilterType::Lanczos3))
+}
+
+/// Strip unicode box-drawing chars, non-printable, and control chars from text
+fn sanitize_text(s: &str) -> String {
+    s.chars().filter(|c| {
+        let u = *c as u32;
+        // Keep printable ASCII + common Latin supplement + spaces + common punctuation
+        // Strip: control chars (0-31, 127), box drawing, geometric shapes, misc symbols, dingbats
+        !(u <= 31 || u == 127
+            || (0x2500..=0x27BF).contains(&u)  // box drawing, block elements, geometric shapes, misc symbols, dingbats
+            || (0x1F300..=0x1F9FF).contains(&u)  // emoji/symbols
+            || (0xFE00..=0xFE0F).contains(&u)    // variation selectors
+        )
+    }).collect()
+}
+
+/// Custom page decorator that pins a styled footer at the bottom of each page.
+struct FooterDecorator {
+    inner: genpdf::SimplePageDecorator,
+    address: String,
+    phone1: String,
+    phone2: String,
+    email: String,
+    wa_icon: DynamicImage,
+    em_icon: DynamicImage,
+}
+
+impl FooterDecorator {
+    fn new(address: String, phone1: String, phone2: String, email: String) -> Self {
+        let wa = decode_icon(WHATSAPP_BYTES, 64).expect("Failed to decode WhatsApp icon");
+        let em = decode_icon(EMAIL_BYTES, 64).expect("Failed to decode email icon");
+        Self { inner: genpdf::SimplePageDecorator::new(), address, phone1, phone2, email, wa_icon: wa, em_icon: em }
+    }
+
+    fn set_margins(&mut self, margins: impl Into<genpdf::Margins>) {
+        self.inner.set_margins(margins);
+    }
+}
+
+impl PageDecorator for FooterDecorator {
+    fn decorate_page<'a>(
+        &mut self,
+        context: &genpdf::Context,
+        mut area: render::Area<'a>,
+        style: style::Style,
+    ) -> Result<render::Area<'a>, error::Error> {
+        area = self.inner.decorate_page(context, area, style)?;
+
+        let footer_h = Mm::from(15.0);
+        let content_h = area.size().height;
+        if content_h <= footer_h + Mm::from(5.0) {
+            return Ok(area);
+        }
+
+        // ---- ROW 1: Red address bar ----
+        {
+            let areas = area.split_horizontally(&[1]);
+            let mut row1 = areas.into_iter().next().unwrap();
+            row1.add_offset(Position::new(Mm::from(0.0), content_h - footer_h));
+            row1.set_height(Mm::from(6.5));
+
+            let addr_clean = sanitize_text(&self.address);
+            if !addr_clean.is_empty() {
+                let red_style = style::Style::new()
+                    .bold()
+                    .with_font_size(9)
+                    .with_color(style::Color::Rgb(0xE8, 0x37, 0x2A));
+                let mut p = elements::Paragraph::new(addr_clean)
+                    .aligned(Alignment::Center)
+                    .styled(red_style)
+                    .padded(2);
+                p.render(context, row1, style)?;
+            }
+        }
+
+        // ---- ROW 2: Contact icons + text ----
+        let phone1 = sanitize_text(&self.phone1);
+        let phone2 = sanitize_text(&self.phone2);
+        let email = sanitize_text(&self.email);
+
+        let mut entries: Vec<(&DynamicImage, &str)> = Vec::new();
+        if !phone1.is_empty() { entries.push((&self.wa_icon, &phone1)); }
+        if !phone2.is_empty() { entries.push((&self.wa_icon, &phone2)); }
+        if !email.is_empty() { entries.push((&self.em_icon, &email)); }
+
+        if !entries.is_empty() {
+            let n = entries.len();
+            let item_w: usize = 22;
+            let gap_w: usize = 1;
+            let total_content = item_w * n + gap_w * n.saturating_sub(1);
+            let margin_w = (100usize.saturating_sub(total_content)) / 2;
+
+            let mut weights: Vec<usize> = vec![margin_w];
+            for i in 0..n {
+                weights.push(item_w);
+                if i < n - 1 {
+                    weights.push(gap_w);
+                }
+            }
+            weights.push(margin_w);
+
+            let areas2 = area.split_horizontally(&[1]);
+            let mut row2 = areas2.into_iter().next().unwrap();
+            row2.add_offset(Position::new(Mm::from(0.0), content_h - footer_h + Mm::from(7.0)));
+            row2.set_height(Mm::from(7.5));
+            let cols = row2.split_horizontally(&weights);
+
+            let txt_style = style::Style::new().with_font_size(8);
+            // Item columns are at odd indices: 1, 3, 5, ... (0 is left margin, 2 is gap, etc.)
+            for (i, (icon, text)) in entries.iter().enumerate() {
+                let col_idx = 1 + i * 2;
+                cols[col_idx].add_image(icon, Position::new(Mm::from(0.5), Mm::from(0.5)),
+                    Scale::new(1.0, 1.0), Rotation::default(), Some(300.0));
+                let _ = cols[col_idx].print_str(&context.font_cache,
+                    Position::new(Mm::from(6.5), Mm::from(2.0)), txt_style, text);
+            }
+        }
+
+        // Shrink content area so content doesn't overflow into footer
+        area.set_height(content_h - footer_h - Mm::from(2.0));
+        Ok(area)
+    }
 }
 
 fn render_header(doc: &mut genpdf::Document) {
-    match image::load_from_memory(HEADER_BYTES) {
-        Ok(img) => {
-            let (w, _h) = img.dimensions();
-            let data: Vec<u8> = if w <= 1800 {
-                HEADER_BYTES.to_vec()
-            } else {
-                let ratio = 1800.0 / w as f64;
-                let new_h = (img.height() as f64 * ratio) as u32;
-                let resized = img.resize(1800, new_h, image::imageops::FilterType::Lanczos3);
-                let mut buf = std::io::Cursor::new(Vec::new());
-                match resized.write_to(&mut buf, image::ImageFormat::Png) {
-                    Ok(_) => buf.into_inner(),
-                    Err(e) => { eprintln!("Header resize error: {}", e); HEADER_BYTES.to_vec() }
-                }
-            };
-            match elements::Image::from_reader(std::io::Cursor::new(data)) {
-                Ok(img) => doc.push(img),
-                Err(e) => eprintln!("Header image error: {}", e),
-            }
-        }
-        Err(e) => {
-            eprintln!("Header image load error: {}. Trying filesystem fallback...", e);
-            if let Ok(data) = std::fs::read("../public/header.png") {
-                if let Ok(img) = elements::Image::from_reader(std::io::Cursor::new(data)) {
-                    doc.push(img);
-                }
-            }
-        }
+    let data = resize_to_fit(HEADER_BYTES, 1800).unwrap_or_else(|| HEADER_BYTES.to_vec());
+    if let Ok(img) = elements::Image::from_reader(std::io::Cursor::new(data)) {
+        doc.push(img);
     }
     doc.push(elements::Break::new(0.4));
 }
 
-fn render_footer(doc: &mut genpdf::Document) {
-    doc.push(elements::Break::new(0.5));
-    match image::load_from_memory(FOOTER_BYTES) {
-        Ok(img) => {
-            let (w, h) = img.dimensions();
-            let data: Vec<u8> = if w <= 900 {
-                FOOTER_BYTES.to_vec()
-            } else {
-                let ratio = 900.0 / w as f64;
-                let new_h = (h as f64 * ratio) as u32;
-                let resized = img.resize(900, new_h, image::imageops::FilterType::Lanczos3);
-                let mut buf = std::io::Cursor::new(Vec::new());
-                match resized.write_to(&mut buf, image::ImageFormat::Png) {
-                    Ok(_) => buf.into_inner(),
-                    Err(e) => { eprintln!("Footer resize error: {}", e); return; }
-                }
-            };
-            match elements::Image::from_reader(std::io::Cursor::new(data)) {
-                Ok(img) => doc.push(img),
-                Err(e) => eprintln!("Footer image error: {}", e),
-            }
-        }
-        Err(e) => {
-            eprintln!("Footer image load error: {}. Trying filesystem fallback...", e);
-            if let Ok(data) = std::fs::read("../public/footer.png") {
-                if let Ok(img) = elements::Image::from_reader(std::io::Cursor::new(data)) {
-                    doc.push(img);
-                }
-            }
-        }
-    }
-}
 
 fn render_document_info(
     doc: &mut genpdf::Document,
@@ -139,39 +270,48 @@ fn render_document_info(
     let small = style::Style::new().with_font_size(9);
     let small_bold = style::Style::new().with_font_size(9).bold();
 
-    // Document header line
-    let mut header_parts = vec![format!("{} {}", doc_type, doc_number)];
-    if !date_val.is_empty() {
-        header_parts.push(format!("Date: {}", date_val));
-    }
-    if !extra_val.is_empty() {
-        header_parts.push(format!("{}: {}", extra_label, extra_val));
-    }
-    if !ref_number.is_empty() {
-        header_parts.push(format!("Ref: {}", ref_number));
-    }
-    doc.push(
-        elements::Paragraph::new(header_parts.join("  |  "))
-            .styled(small_bold)
-            .padded((0, 0, 4, 0)),
-    );
+    // Bordered invoice reference box: 2 columns, 2 rows
+    let mut ref_box = elements::TableLayout::new(vec![50, 50]);
+    ref_box.set_cell_decorator(elements::FrameCellDecorator::new(true, true, false));
 
-    // Client info
-    if !client_name.is_empty() {
-        doc.push(elements::Paragraph::new("To,").styled(small));
-        doc.push(
-            elements::Paragraph::new(client_name)
-                .styled(style::Effect::Bold)
-                .styled(small),
-        );
-        if !client_address.is_empty() {
-            doc.push(
-                elements::Paragraph::new(client_address)
-                    .styled(small)
-                    .padded((0, 0, 3, 0)),
-            );
-        }
-    }
+    // Row 1: Document Type + Number | Date + Extra Date
+    let left1 = if !extra_val.is_empty() {
+        format!("{} # {}  |  {}: {}", doc_type, doc_number, extra_label, fmt_date(extra_val))
+    } else {
+        format!("{} # {}", doc_type, doc_number)
+    };
+    let right1 = if !date_val.is_empty() {
+        format!("Date: {}", fmt_date(date_val))
+    } else {
+        String::new()
+    };
+    ref_box.row()
+        .element(elements::Paragraph::new(left1).styled(small_bold).padded(3))
+        .element(elements::Paragraph::new(right1).aligned(Alignment::Right).styled(small).padded(3))
+        .push().expect("ref box row 1");
+
+    // Row 2: Ref | To: Client
+    let ref_text = if !ref_number.is_empty() {
+        format!("Ref: {}", ref_number)
+    } else {
+        String::new()
+    };
+    let client = sanitize_text(client_name.trim());
+    let addr = sanitize_text(client_address.trim());
+    let to_text = if !addr.is_empty() {
+        format!("To: {} ({})", client, addr)
+    } else if !client.is_empty() {
+        format!("To: {}", client)
+    } else {
+        String::new()
+    };
+    ref_box.row()
+        .element(elements::Paragraph::new(ref_text).padded(3))
+        .element(elements::Paragraph::new(to_text).aligned(Alignment::Right).styled(style::Effect::Bold).padded(3))
+        .push().expect("ref box row 2");
+
+    doc.push(ref_box);
+    doc.push(elements::Break::new(0.4));
 
     if !settings.salutation.is_empty() {
         doc.push(elements::Paragraph::new(&settings.salutation).styled(small));
@@ -209,12 +349,17 @@ fn render_items_with_totals(doc: &mut genpdf::Document, items: &[crate::models::
 
     // Body rows
     for item in items {
+        let row_total = if item.total_price == Decimal::ZERO && (item.quantity != Decimal::ZERO || item.price_per_unit != Decimal::ZERO) {
+            item.quantity * item.price_per_unit
+        } else {
+            item.total_price
+        };
         table.row()
             .element(elements::Paragraph::new(format!("{}", item.sno)).aligned(Alignment::Center).padded(1))
             .element(elements::Paragraph::new(&item.item_name).aligned(Alignment::Center).padded(1))
             .element(elements::Paragraph::new(fmt_amount(item.quantity)).aligned(Alignment::Center).padded(1))
             .element(elements::Paragraph::new(fmt_amount(item.price_per_unit)).aligned(Alignment::Center).padded(1))
-            .element(elements::Paragraph::new(fmt_amount(item.total_price)).aligned(Alignment::Center).styled(bold).padded(1))
+            .element(elements::Paragraph::new(fmt_amount(row_total)).aligned(Alignment::Center).styled(bold).padded(1))
             .push().expect("item row");
     }
 
@@ -289,7 +434,12 @@ pub fn export_invoice_pdf(
     doc.set_title(&format!("Invoice {}", doc_num));
     doc.set_minimal_conformance();
 
-    let mut decorator = genpdf::SimplePageDecorator::new();
+    let mut decorator = FooterDecorator::new(
+        settings.office_address.clone(),
+        settings.phone1.clone(),
+        settings.phone2.clone(),
+        settings.email.clone(),
+    );
     decorator.set_margins(10);
     doc.set_page_decorator(decorator);
 
@@ -307,7 +457,7 @@ pub fn export_invoice_pdf(
             elements::Paragraph::new(format!("Notes: {}", invoice.notes))
                 .styled(style::Style::new().italic().with_font_size(8)),
         );
-        doc.push(elements::Break::new(0.5));
+        doc.push(elements::Break::new(0.3));
     }
 
     doc.push(elements::Break::new(0.3));
@@ -321,46 +471,6 @@ pub fn export_invoice_pdf(
             .aligned(Alignment::Center)
             .styled(style::Style::new().with_font_size(8)),
     );
-
-    doc.push(elements::Break::new(0.5));
-
-    // Contact block below thank-you text
-    doc.push(
-        elements::Paragraph::new("Office # 2-3, Basement Asif Plaza, Fazal-e-Haq Road, Blue Area, Islamabad")
-            .aligned(Alignment::Center)
-            .styled(style::Style::new().with_font_size(7).with_color(style::Color::Rgb(220, 50, 50))),
-    );
-    doc.push(elements::Break::new(0.2));
-
-    // Contact line with icons + text using table layout
-    {
-        let mut table = elements::TableLayout::new(vec![4, 45, 4, 45]);
-
-        let phone_icon = elements::Image::from_reader(std::io::Cursor::new(PHONE_ICON.to_vec()))
-            .expect("phone icon");
-        let email_icon = elements::Image::from_reader(std::io::Cursor::new(EMAIL_ICON.to_vec()))
-            .expect("email icon");
-
-        table.row()
-            .element(phone_icon)
-            .element(
-                elements::Paragraph::new("0300-5259751 / 0345-8510130")
-                    .aligned(Alignment::Left)
-                    .styled(style::Style::new().with_font_size(7))
-                    .padded(2),
-            )
-            .element(email_icon)
-            .element(
-                elements::Paragraph::new("zahraenterprises4@gmail.com")
-                    .aligned(Alignment::Left)
-                    .styled(style::Style::new().with_font_size(7))
-                    .padded(2),
-            )
-            .push().expect("contact row");
-        doc.push(table);
-    }
-
-    render_footer(&mut doc);
 
     doc.render_to_file(output_path)
         .map_err(|e| format!("Failed to write PDF: {}", e))?;
@@ -378,7 +488,12 @@ pub fn export_quotation_pdf(
     doc.set_title(&format!("Quotation {}", quotation.quotation_number));
     doc.set_minimal_conformance();
 
-    let mut decorator = genpdf::SimplePageDecorator::new();
+    let mut decorator = FooterDecorator::new(
+        settings.office_address.clone(),
+        settings.phone1.clone(),
+        settings.phone2.clone(),
+        settings.email.clone(),
+    );
     decorator.set_margins(10);
     doc.set_page_decorator(decorator);
 
@@ -429,7 +544,7 @@ pub fn export_quotation_pdf(
             elements::Paragraph::new(format!("Notes: {}", quotation.notes))
                 .styled(style::Style::new().italic().with_font_size(8)),
         );
-        doc.push(elements::Break::new(0.5));
+        doc.push(elements::Break::new(0.3));
     }
 
     doc.push(elements::Break::new(0.3));
@@ -443,46 +558,6 @@ pub fn export_quotation_pdf(
             .aligned(Alignment::Center)
             .styled(style::Style::new().with_font_size(8)),
     );
-
-    doc.push(elements::Break::new(0.5));
-
-    // Contact block below thank-you text
-    doc.push(
-        elements::Paragraph::new("Office # 2-3, Basement Asif Plaza, Fazal-e-Haq Road, Blue Area, Islamabad")
-            .aligned(Alignment::Center)
-            .styled(style::Style::new().with_font_size(7).with_color(style::Color::Rgb(220, 50, 50))),
-    );
-    doc.push(elements::Break::new(0.2));
-
-    // Contact line with icons + text using table layout
-    {
-        let mut table = elements::TableLayout::new(vec![4, 45, 4, 45]);
-
-        let phone_icon = elements::Image::from_reader(std::io::Cursor::new(PHONE_ICON.to_vec()))
-            .expect("phone icon");
-        let email_icon = elements::Image::from_reader(std::io::Cursor::new(EMAIL_ICON.to_vec()))
-            .expect("email icon");
-
-        table.row()
-            .element(phone_icon)
-            .element(
-                elements::Paragraph::new("0300-5259751 / 0345-8510130")
-                    .aligned(Alignment::Left)
-                    .styled(style::Style::new().with_font_size(7))
-                    .padded(2),
-            )
-            .element(email_icon)
-            .element(
-                elements::Paragraph::new("zahraenterprises4@gmail.com")
-                    .aligned(Alignment::Left)
-                    .styled(style::Style::new().with_font_size(7))
-                    .padded(2),
-            )
-            .push().expect("contact row");
-        doc.push(table);
-    }
-
-    render_footer(&mut doc);
 
     doc.render_to_file(output_path)
         .map_err(|e| format!("Failed to write PDF: {}", e))?;

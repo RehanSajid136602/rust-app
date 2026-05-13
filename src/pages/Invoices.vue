@@ -39,7 +39,7 @@
             <tr v-for="inv in filteredInvoices" :key="inv.id" class="table-row">
               <td class="px-4 py-3 text-sm font-medium text-gray-900">{{ inv.invoice_number }}</td>
               <td class="px-4 py-3 text-sm text-gray-700">{{ inv.client_name }}</td>
-              <td class="px-4 py-3 text-sm text-gray-600">{{ inv.invoice_date }}</td>
+              <td class="px-4 py-3 text-sm text-gray-600">{{ fmtDate(inv.invoice_date) }}</td>
               <td class="px-4 py-3 text-sm text-right font-medium">{{ fmt(inv.total) }}</td>
               <td class="px-4 py-3 text-sm text-right text-green-600">{{ fmt(inv.amount_paid) }}</td>
               <td class="px-4 py-3 text-sm text-right" :class="inv.remaining_debt > 0 ? 'text-red-600' : 'text-green-600'">
@@ -127,7 +127,7 @@
                   </tr>
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200">
-                  <tr v-for="(item, idx) in form.items" :key="idx">
+                  <tr v-for="(item, idx) in form.items" :key="`item_${idx}_${item.item_name}`">
                     <td class="px-2 py-2 text-sm text-gray-500">{{ idx + 1 }}</td>
                     <td class="px-2 py-2 relative">
                       <AutocompleteLineEdit
@@ -383,7 +383,19 @@ const paymentForm = reactive({
 
 const fmt = (n: number | undefined): string => {
   if (n === undefined || n === null) n = 0
+  // Show integer without decimals if whole number
+  if (n % 1 === 0) {
+    return new Intl.NumberFormat('en-IN').format(n)
+  }
   return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2 }).format(n)
+}
+
+const fmtDate = (dateStr: string): string => {
+  if (!dateStr) return ''
+  const date = new Date(dateStr)
+  if (isNaN(date.getTime())) return dateStr
+  // Format as DD-MM-YYYY using en-PK locale then replace slashes
+  return date.toLocaleDateString('en-PK', { day: '2-digit', month: '2-digit', year: 'numeric' }).replace(/\//g, '-')
 }
 
 const statusBadge = (s: string): string => {
