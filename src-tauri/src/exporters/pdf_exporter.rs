@@ -4,6 +4,7 @@ use crate::models::{Invoice, Quotation, CompanySettings, PaymentStatus};
 use genpdf::{self, Alignment, Element as _};
 use genpdf::{elements, fonts, style};
 use rust_decimal::Decimal;
+use image::GenericImageView;
 
 const HEADER_IMG: &str = "../public/header.png";
 const FOOTER_IMG: &str = "../public/footer.png";
@@ -55,16 +56,36 @@ fn fmt_amount(n: Decimal) -> String {
     format!("{}{}.{:02}", sign, with_commas, frac)
 }
 
-fn render_header(doc: &mut genpdf::Document) {
-    if let Ok(img) = elements::Image::from_path(HEADER_IMG) {
-        doc.push(img);
+fn resize_image(path: &str, max_width: u32) -> Option<Vec<u8>> {
+    let img = image::open(path).ok()?;
+    let (w, h) = img.dimensions();
+    if w <= max_width {
+        // Image is already small enough, return original bytes
+        return std::fs::read(path).ok();
     }
-    doc.push(elements::Break::new(0.2));
+    let ratio = max_width as f64 / w as f64;
+    let new_h = (h as f64 * ratio) as u32;
+    let resized = img.resize(max_width, new_h, image::imageops::FilterType::Lanczos3);
+    let mut buf = std::io::Cursor::new(Vec::new());
+    resized.write_to(&mut buf, image::ImageFormat::Png).ok()?;
+    Some(buf.into_inner())
+}
+
+fn render_header(doc: &mut genpdf::Document) {
+    if let Some(data) = resize_image(HEADER_IMG, 800) {
+        if let Ok(img) = elements::Image::from_reader(std::io::Cursor::new(data)) {
+            doc.push(img);
+        }
+    }
+    doc.push(elements::Break::new(0.3));
 }
 
 fn render_footer(doc: &mut genpdf::Document) {
-    if let Ok(img) = elements::Image::from_path(FOOTER_IMG) {
-        doc.push(img);
+    doc.push(elements::Break::new(0.5));
+    if let Some(data) = resize_image(FOOTER_IMG, 800) {
+        if let Ok(img) = elements::Image::from_reader(std::io::Cursor::new(data)) {
+            doc.push(img);
+        }
     }
 }
 
@@ -75,25 +96,31 @@ fn render_company_info(doc: &mut genpdf::Document, settings: &CompanySettings) {
             .styled(style::Effect::Bold)
             .styled(style::Style::new().with_font_size(13)),
     );
-    doc.push(
-        elements::Paragraph::new(&settings.tagline)
+    if !settings.tagline.is_empty() {
+        doc.push(
+            elements::Paragraph::new(&settings.tagline)
+                .aligned(Alignment::Center)
+                .styled(style::Style::new().italic().with_font_size(7)),
+        );
+    }
+    if !settings.office_address.is_empty() {
+        doc.push(
+            elements::Paragraph::new(format!(
+                "{}, Ph: {}, {}",
+                settings.office_address, settings.phone1, settings.email
+            ))
             .aligned(Alignment::Center)
-            .styled(style::Style::new().italic().with_font_size(7)),
-    );
-    doc.push(
-        elements::Paragraph::new(format!(
-            "{} | Ph: {} | {}",
-            settings.office_address, settings.phone1, settings.email
-        ))
-        .aligned(Alignment::Center)
-        .styled(style::Style::new().with_font_size(7)),
-    );
-    doc.push(
-        elements::Paragraph::new(&settings.ntn_number)
-            .aligned(Alignment::Center)
-            .styled(style::Effect::Bold)
-            .styled(style::Style::new().with_font_size(9)),
-    );
+            .styled(style::Style::new().with_font_size(7)),
+        );
+    }
+    if !settings.ntn_number.is_empty() {
+        doc.push(
+            elements::Paragraph::new(format!("NTN: {}", settings.ntn_number))
+                .aligned(Alignment::Center)
+                .styled(style::Effect::Bold)
+                .styled(style::Style::new().with_font_size(9)),
+        );
+    }
     doc.push(elements::Break::new(0.4));
 }
 
@@ -109,52 +136,62 @@ fn render_document_info(
     client_address: &str,
     settings: &CompanySettings,
 ) {
-    // Doc info left
-    doc.push(
-        elements::Paragraph::new(format!("{}: {}", doc_type, doc_number))
-            .styled(style::Effect::Bold)
-            .styled(style::Style::new().with_font_size(9)),
-    );
-    doc.push(
-        elements::Paragraph::new(format!("Date: {}", date_val))
-            .styled(style::Style::new().with_font_size(9)),
-    );
+    let small = style::Style::new().with_font_size(9);
+    let small_bold = style::Style::new().with_font_size(9).bold();
+
+    // Document header: type, number, date
+    let mut header_parts = vec![format!("{} {}", doc_type, doc_number)];
+    if !date_val.is_empty() {
+        header_parts.push(format!("Date: {}", date_val));
+    }
     if !extra_val.is_empty() {
-        doc.push(
-            elements::Paragraph::new(format!("{}: {}", extra_label, extra_val))
-                .styled(style::Style::new().with_font_size(9)),
-        );
+        header_parts.push(format!("{}: {}", extra_label, extra_val));
     }
     if !ref_number.is_empty() {
-        doc.push(
-            elements::Paragraph::new(format!("Ref: {}", ref_number))
-                .styled(style::Style::new().with_font_size(9)),
-        );
+        header_parts.push(format!("Ref: {}", ref_number));
     }
+    doc.push(
+        elements::Paragraph::new(header_parts.join("  |  "))
+            .styled(small_bold),
+    );
     doc.push(elements::Break::new(0.3));
 
-    // Client info
+    // Client address block
     if !client_name.is_empty() {
         doc.push(
-            elements::Paragraph::new(format!("To,\n{}\n{}", client_name, client_address))
-                .styled(style::Style::new().with_font_size(9)),
+            elements::Paragraph::new(format!("To,"))
+                .styled(small),
         );
+        doc.push(
+            elements::Paragraph::new(client_name)
+                .styled(style::Effect::Bold)
+                .styled(small),
+        );
+        if !client_address.is_empty() {
+            doc.push(
+                elements::Paragraph::new(client_address)
+                    .styled(small),
+            );
+        }
         doc.push(elements::Break::new(0.2));
     }
 
+    // Salutation
     if !settings.salutation.is_empty() {
         doc.push(
             elements::Paragraph::new(&settings.salutation)
-                .styled(style::Style::new().with_font_size(9)),
+                .styled(small),
         );
     }
+    // Body text
     if !settings.body_text.is_empty() {
+        doc.push(elements::Break::new(0.1));
         doc.push(
             elements::Paragraph::new(&settings.body_text)
                 .styled(style::Style::new().italic().with_font_size(8)),
         );
-        doc.push(elements::Break::new(0.2));
     }
+    doc.push(elements::Break::new(0.1));
 }
 
 fn render_items_table(doc: &mut genpdf::Document, items: &[crate::models::InvoiceItem]) {
@@ -240,74 +277,52 @@ fn render_totals(doc: &mut genpdf::Document, invoice: &Invoice) {
     let mut table = elements::TableLayout::new(vec![1, 1]);
     let right = Alignment::Right;
     let font_size = style::Style::new().with_font_size(9);
+    let font_bold = style::Style::new().with_font_size(9).bold();
 
-    let rows: Vec<(&str, String, bool)> = vec![
-        ("Subtotal:", fmt_amount(invoice.subtotal), false),
-        ("Grand Total:", fmt_amount(invoice.grand_total), false),
-    ];
+    // Subtotal
+    table.row()
+        .element(elements::Paragraph::new("Subtotal").aligned(right).styled(font_size).padded(1))
+        .element(elements::Paragraph::new(fmt_amount(invoice.subtotal)).aligned(right).styled(font_size).padded(1))
+        .push().expect("subtotal row");
 
-    for (label, value, _bold) in &rows {
-        table
-            .row()
-            .element(
-                elements::Paragraph::new(*label)
-                    .aligned(right)
-                    .styled(font_size)
-                    .padded(1),
-            )
-            .element(
-                elements::Paragraph::new(value)
-                    .aligned(right)
-                    .styled(font_size)
-                    .padded(1),
-            )
-            .push()
-            .expect("Invalid totals row");
+    // Discount (if any)
+    if invoice.discount_total != Decimal::ZERO {
+        table.row()
+            .element(elements::Paragraph::new("Less: Discount").aligned(right).styled(font_size).padded(1))
+            .element(elements::Paragraph::new(fmt_amount(invoice.discount_total)).aligned(right).styled(font_size).padded(1))
+            .push().expect("discount row");
     }
 
+    // Tax (if any)
+    if invoice.tax_total != Decimal::ZERO {
+        table.row()
+            .element(elements::Paragraph::new("Add: Tax").aligned(right).styled(font_size).padded(1))
+            .element(elements::Paragraph::new(fmt_amount(invoice.tax_total)).aligned(right).styled(font_size).padded(1))
+            .push().expect("tax row");
+    }
+
+    if invoice.subtotal != invoice.grand_total {
+        table.row()
+            .element(elements::Paragraph::new("Grand Total").aligned(right).styled(font_bold).padded(1))
+            .element(elements::Paragraph::new(fmt_amount(invoice.grand_total)).aligned(right).styled(font_bold).padded(1))
+            .push().expect("grand total row");
+    }
+
+    // Adjustment (if non-zero)
     if invoice.adjustment_amount != Decimal::ZERO {
-        let adj_label = if invoice.adjustment_label.is_empty() {
-            "Adjustment"
-        } else {
-            &invoice.adjustment_label
-        };
-        table
-            .row()
-            .element(
-                elements::Paragraph::new(adj_label)
-                    .aligned(right)
-                    .styled(font_size)
-                    .padded(1),
-            )
-            .element(
-                elements::Paragraph::new(fmt_amount(invoice.adjustment_amount))
-                    .aligned(right)
-                    .styled(font_size)
-                    .padded(1),
-            )
-            .push()
-            .expect("Invalid adjustment row");
+        let label = if invoice.adjustment_label.is_empty() { "Adjustment" } else { &invoice.adjustment_label };
+        table.row()
+            .element(elements::Paragraph::new(label).aligned(right).styled(font_size).padded(1))
+            .element(elements::Paragraph::new(fmt_amount(invoice.adjustment_amount)).aligned(right).styled(font_size).padded(1))
+            .push().expect("adjustment row");
     }
 
     // Net Amount
-    table
-        .row()
-        .element(
-            elements::Paragraph::new("Net Amount:")
-                .aligned(right)
-                .styled(style::Effect::Bold)
-                .styled(style::Style::new().with_font_size(10))
-                .padded(1),
-        )
-        .element(
-            elements::Paragraph::new(fmt_amount(invoice.total))
-                .aligned(right)
-                .styled(style::Effect::Bold)
-                .styled(style::Style::new().with_font_size(10))
-                .padded(1),
-        )
-        .push()
-        .expect("Invalid net amount row");
+    let net_style = style::Style::new().with_font_size(10).bold();
+    table.row()
+        .element(elements::Paragraph::new("Net Amount").aligned(right).styled(net_style).padded(1))
+        .element(elements::Paragraph::new(fmt_amount(invoice.total)).aligned(right).styled(net_style).padded(1))
+        .push().expect("net amount row");
 
     doc.push(table);
     doc.push(elements::Break::new(0.3));
@@ -320,7 +335,8 @@ pub fn export_invoice_pdf(
 ) -> Result<(), String> {
     let font = load_font();
     let mut doc = genpdf::Document::new(font);
-    doc.set_title(&format!("Invoice {}", invoice.invoice_number));
+    let doc_num = if invoice.invoice_number.is_empty() { &invoice.ref_number } else { &invoice.invoice_number };
+    doc.set_title(&format!("Invoice {}", doc_num));
     doc.set_minimal_conformance();
 
     let mut decorator = genpdf::SimplePageDecorator::new();
@@ -330,7 +346,7 @@ pub fn export_invoice_pdf(
     render_header(&mut doc);
     render_company_info(&mut doc, settings);
     render_document_info(
-        &mut doc, "Invoice", &invoice.invoice_number,
+        &mut doc, "Invoice", doc_num,
         &invoice.invoice_date, "Due Date", &invoice.due_date,
         &invoice.ref_number, &invoice.client_name, &invoice.client_address,
         settings,
@@ -354,7 +370,7 @@ pub fn export_invoice_pdf(
         };
         doc.push(
             elements::Paragraph::new(format!(
-                "Paid: {} | Balance: {} | Status: {}",
+                "Paid: Rs. {}   Balance: Rs. {}   Status: {}",
                 fmt_amount(invoice.amount_paid),
                 fmt_amount(invoice.remaining_debt),
                 status_str,

@@ -1,6 +1,6 @@
 <template>
   <div class="fixed inset-0 bg-black/40 flex items-center justify-center z-[9999]">
-    <div class="bg-white rounded-xl p-8 w-[420px] shadow-2xl text-center">
+    <div class="bg-white rounded-xl p-8 w-[calc(100%-2rem)] max-w-[420px] shadow-2xl text-center">
       <div class="w-14 h-14 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4 text-3xl">
         ✓
       </div>

@@ -253,7 +253,7 @@
 
         <div class="flex justify-end space-x-3 p-6 border-t">
           <button @click="exportPdf" class="btn-secondary-outline">
-            🖨 Print
+            📄 Export PDF
           </button>
           <button @click="closeForm" class="btn-secondary">Cancel</button>
           <button @click="saveInvoice" class="btn-primary" :disabled="saving">
@@ -302,6 +302,7 @@ import { ref, computed, reactive, onMounted, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { save } from '@tauri-apps/plugin-dialog'
 import { desktopDir } from '@tauri-apps/api/path'
+import { Store } from '@tauri-apps/plugin-store'
 import AutocompleteLineEdit from '../components/AutocompleteLineEdit.vue'
 import type { Suggestion } from '../components/AutocompleteLineEdit.vue'
 import ExportSuccessDialog from '../components/ExportSuccessDialog.vue'
@@ -554,36 +555,61 @@ const deleteInvoice = async (id: number) => {
   try { await invoke('delete_invoice', { id }); await loadInvoices() } catch (e) { alert('Error: ' + e) }
 }
 
+const getStore = async () => Store.load('settings.json')
+
+const getLastExportDir = async (): Promise<string> => {
+  try {
+    const store = await getStore()
+    return (await store.get<string>('lastExportDir')) || ''
+  } catch {
+    return ''
+  }
+}
+
+const saveLastExportDir = async (path: string) => {
+  try {
+    const store = await getStore()
+    const dir = path.replace(/[/\\][^/\\]*$/, '')
+    await store.set('lastExportDir', dir)
+    await store.save()
+  } catch { /* ignore */ }
+}
+
 const exportPdf = async () => {
   if (!form.client_name || form.items.length === 0) {
-    alert('Please add a client and at least one item before printing.')
+    alert('Please add a client and at least one item before exporting.')
     return
   }
   recalc()
   try {
-    const desktop = await desktopDir()
+    const lastDir = await getLastExportDir()
+    const desktop = lastDir || await desktopDir()
     const name = (form.invoice_number || form.ref_number || 'invoice').replace(/[\\/:*?"<>|]/g, '-')
-    const path = `${desktop}${name}.pdf`
-    await invoke<string>('export_invoice_pdf', { invoice: { ...form }, outputPath: path })
-    exportedPath.value = path
+    const outPath = await save({
+      defaultPath: `${desktop}/${name}.pdf`,
+      filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
+    })
+    if (!outPath) return
+
+    await saveLastExportDir(outPath)
+    await invoke<string>('export_invoice_pdf', { invoice: { ...form }, outputPath: outPath })
+    exportedPath.value = outPath
   } catch (e) {
-    alert('Print failed: ' + e)
+    alert('Export failed: ' + e)
   }
 }
 
 const exportExcel = async () => {
   try {
-    let outPath: string | null
-    try {
-      const desktop = await desktopDir()
-      outPath = await save({
-        defaultPath: `${desktop}invoices_export.xlsx`,
-        filters: [{ name: 'Excel Files', extensions: ['xlsx'] }],
-      })
-    } catch {
-      outPath = null
-    }
+    const lastDir = await getLastExportDir()
+    const desktop = lastDir || await desktopDir()
+    const outPath = await save({
+      defaultPath: `${desktop}/invoices_export.xlsx`,
+      filters: [{ name: 'Excel Files', extensions: ['xlsx'] }],
+    })
     if (!outPath) return
+
+    await saveLastExportDir(outPath)
     await invoke<string>('export_invoices_excel', { outputPath: outPath })
     exportedPath.value = outPath
   } catch (e) {

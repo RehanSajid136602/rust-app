@@ -188,7 +188,7 @@
 
         <div class="flex justify-end space-x-3 p-6 border-t">
           <button @click="exportPdf" class="btn-secondary-outline">
-            🖨 Print
+            📄 Export PDF
           </button>
           <button @click="closeForm" class="btn-secondary">Cancel</button>
           <button @click="saveQuotation" class="btn-primary" :disabled="saving">
@@ -210,7 +210,9 @@
 <script setup lang="ts">
 import { ref, computed, reactive, onMounted, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { save } from '@tauri-apps/plugin-dialog'
 import { desktopDir } from '@tauri-apps/api/path'
+import { Store } from '@tauri-apps/plugin-store'
 import AutocompleteLineEdit from '../components/AutocompleteLineEdit.vue'
 import type { Suggestion } from '../components/AutocompleteLineEdit.vue'
 import ExportSuccessDialog from '../components/ExportSuccessDialog.vue'
@@ -371,20 +373,47 @@ const deleteQuotation = async (id: number) => {
   try { await invoke('delete_quotation', { id }); await loadQuotations() } catch (e) { alert('Error: ' + e) }
 }
 
+const getStore = async () => Store.load('settings.json')
+
+const getLastExportDir = async (): Promise<string> => {
+  try {
+    const store = await getStore()
+    return (await store.get<string>('lastExportDir')) || ''
+  } catch {
+    return ''
+  }
+}
+
+const saveLastExportDir = async (path: string) => {
+  try {
+    const store = await getStore()
+    const dir = path.replace(/[/\\][^/\\]*$/, '')
+    await store.set('lastExportDir', dir)
+    await store.save()
+  } catch { /* ignore */ }
+}
+
 const exportPdf = async () => {
   if (!form.client_name || form.items.length === 0) {
-    alert('Please add a client and at least one item before printing.')
+    alert('Please add a client and at least one item before exporting.')
     return
   }
   recalc()
   try {
-    const desktop = await desktopDir()
+    const lastDir = await getLastExportDir()
+    const desktop = lastDir || await desktopDir()
     const name = (form.quotation_number || form.ref_number || 'quotation').replace(/[\\/:*?"<>|]/g, '-')
-    const path = `${desktop}${name}.pdf`
-    await invoke<string>('export_quotation_pdf', { quotation: { ...form }, outputPath: path })
-    exportedPath.value = path
+    const outPath = await save({
+      defaultPath: `${desktop}/${name}.pdf`,
+      filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
+    })
+    if (!outPath) return
+
+    await saveLastExportDir(outPath)
+    await invoke<string>('export_quotation_pdf', { quotation: { ...form }, outputPath: outPath })
+    exportedPath.value = outPath
   } catch (e) {
-    alert('Print failed: ' + e)
+    alert('Export failed: ' + e)
   }
 }
 

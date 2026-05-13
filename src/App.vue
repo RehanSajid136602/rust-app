@@ -1,7 +1,7 @@
 <template>
   <div id="app-content" class="min-h-screen flex">
     <!-- Sidebar -->
-    <aside class="w-64 bg-white border-r border-gray-200">
+    <aside class="w-64 bg-white border-r border-gray-200 shrink-0">
       <div class="p-6">
         <h1 class="text-xl font-bold text-primary-600">Zahra Invoice</h1>
         <p class="text-sm text-gray-500 mt-1">Enterprise</p>
@@ -22,7 +22,7 @@
     </aside>
 
     <!-- Main Content -->
-    <main class="flex-1 overflow-auto">
+    <main class="flex-1 min-w-0 overflow-auto">
       <header class="bg-white border-b border-gray-200 px-8 py-4">
         <div class="flex items-center justify-between">
           <h2 class="text-2xl font-semibold text-gray-800">{{ pageTitle }}</h2>
@@ -37,18 +37,11 @@
       </div>
     </main>
   </div>
-
-  <!-- Print Template (hidden, shown only during print) -->
-  <div id="print-container" class="print-only">
-    <InvoicePrintTemplate :data="printData" />
-  </div>
 </template>
 
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import InvoicePrintTemplate from './components/InvoicePrintTemplate.vue'
-import { printData } from './composables/usePrint'
 
 const route = useRoute()
 

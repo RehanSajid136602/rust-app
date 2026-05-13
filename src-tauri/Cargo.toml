@@ -46,6 +46,9 @@ calamine = "0.28"
 # PDF generation
 genpdf = { version = "0.2", features = ["images"] }
 
+# Image processing for PDF header/footer resizing
+image = "0.25"
+
 # PDF text extraction
 pdf-extract = "0.7"
 
