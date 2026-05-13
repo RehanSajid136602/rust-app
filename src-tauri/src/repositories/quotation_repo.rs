@@ -143,7 +143,7 @@ impl<'a> QuotationRepository<'a> {
                 "SELECT quotation_prefix FROM company_settings WHERE id = 1",
                 [],
                 |row| row.get(0),
-            )?;
+            ).unwrap_or_else(|_| "QT #".to_string());
             let year = Utc::now().format("%Y").to_string().parse::<u32>().unwrap_or(2026);
             let pattern = format!("{}-{}-%", prefix, year);
             let max_num: Option<i32> = tx.query_row(

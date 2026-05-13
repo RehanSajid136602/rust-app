@@ -4,29 +4,31 @@ A modern Tauri v2 + Rust + Vue 3 desktop application for generating and managing
 
 ## 🚀 Quick Start
 
-### Prerequisites
-
-- **Node.js** 18+ (for frontend)
-- **Rust** 1.77+ (for backend)
-- **Python** 3.10+ (optional, for PDF generation bridge)
-
-### Development
+### One-command setup
 
 ```bash
-# Install frontend dependencies
-npm install
-
-# Run in development mode (starts both frontend and Rust backend)
-npm run tauri dev
+./setup.sh
 ```
+
+That's it. The script checks prerequisites, installs system deps on Linux, and runs `npm install`.
+
+### Manual setup
+
+```bash
+npm install        # installs frontend deps + tauri cli
+npm run tauri dev  # starts dev mode (frontend + rust backend)
+```
+
+### Prerequisites
+
+- **Node.js** 18+
+- **Rust** 1.77+
+- Linux: `sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libsoup-3.0-dev libjavascriptcoregtk-4.1-dev`
 
 ### Build
 
 ```bash
-# Build for current platform
-npm run tauri build
-
-# Output: dist/zahra-invoice-desktop/
+npm run tauri build   # → dist/zahra-invoice-desktop/
 ```
 
 ---
