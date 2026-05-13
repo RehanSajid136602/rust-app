@@ -6,8 +6,8 @@ use genpdf::{elements, fonts, style};
 use rust_decimal::Decimal;
 use image::GenericImageView;
 
-const HEADER_IMG: &str = "../public/header.png";
-const FOOTER_IMG: &str = "../public/footer.png";
+const HEADER_BYTES: &[u8] = include_bytes!("../../../public/header.png");
+const FOOTER_BYTES: &[u8] = include_bytes!("../../../public/footer.png");
 const FONT_DIRS: &[&str] = &[
     "/usr/share/fonts/liberation",
     "/usr/share/fonts/truetype/liberation",
@@ -56,11 +56,11 @@ fn fmt_amount(n: Decimal) -> String {
     format!("{}{}.{:02}", sign, with_commas, frac)
 }
 
-fn resize_image(path: &str, max_width: u32) -> Option<Vec<u8>> {
-    let img = image::open(path).ok()?;
+fn resize_image_bytes(data: &[u8], max_width: u32) -> Option<Vec<u8>> {
+    let img = image::load_from_memory(data).ok()?;
     let (w, h) = img.dimensions();
     if w <= max_width {
-        return std::fs::read(path).ok();
+        return Some(data.to_vec());
     }
     let ratio = max_width as f64 / w as f64;
     let new_h = (h as f64 * ratio) as u32;
@@ -71,7 +71,7 @@ fn resize_image(path: &str, max_width: u32) -> Option<Vec<u8>> {
 }
 
 fn render_header(doc: &mut genpdf::Document) {
-    if let Some(data) = resize_image(HEADER_IMG, 1800) {
+    if let Some(data) = resize_image_bytes(HEADER_BYTES, 1800) {
         if let Ok(img) = elements::Image::from_reader(std::io::Cursor::new(data)) {
             doc.push(img);
         }
@@ -81,7 +81,7 @@ fn render_header(doc: &mut genpdf::Document) {
 
 fn render_footer(doc: &mut genpdf::Document) {
     doc.push(elements::Break::new(0.5));
-    if let Some(data) = resize_image(FOOTER_IMG, 900) {
+    if let Some(data) = resize_image_bytes(FOOTER_BYTES, 900) {
         if let Ok(img) = elements::Image::from_reader(std::io::Cursor::new(data)) {
             doc.push(img);
         }
