@@ -56,24 +56,34 @@ fn fmt_amount(n: Decimal) -> String {
     format!("{}{}.{:02}", sign, with_commas, frac)
 }
 
-fn resize_image_bytes(data: &[u8], max_width: u32) -> Option<Vec<u8>> {
-    let img = image::load_from_memory(data).ok()?;
-    let (w, h) = img.dimensions();
-    if w <= max_width {
-        return Some(data.to_vec());
-    }
-    let ratio = max_width as f64 / w as f64;
-    let new_h = (h as f64 * ratio) as u32;
-    let resized = img.resize(max_width, new_h, image::imageops::FilterType::Lanczos3);
-    let mut buf = std::io::Cursor::new(Vec::new());
-    resized.write_to(&mut buf, image::ImageFormat::Png).ok()?;
-    Some(buf.into_inner())
-}
-
 fn render_header(doc: &mut genpdf::Document) {
-    if let Some(data) = resize_image_bytes(HEADER_BYTES, 1800) {
-        if let Ok(img) = elements::Image::from_reader(std::io::Cursor::new(data)) {
-            doc.push(img);
+    match image::load_from_memory(HEADER_BYTES) {
+        Ok(img) => {
+            let (w, _h) = img.dimensions();
+            let data: Vec<u8> = if w <= 1800 {
+                HEADER_BYTES.to_vec()
+            } else {
+                let ratio = 1800.0 / w as f64;
+                let new_h = (img.height() as f64 * ratio) as u32;
+                let resized = img.resize(1800, new_h, image::imageops::FilterType::Lanczos3);
+                let mut buf = std::io::Cursor::new(Vec::new());
+                match resized.write_to(&mut buf, image::ImageFormat::Png) {
+                    Ok(_) => buf.into_inner(),
+                    Err(e) => { eprintln!("Header resize error: {}", e); HEADER_BYTES.to_vec() }
+                }
+            };
+            match elements::Image::from_reader(std::io::Cursor::new(data)) {
+                Ok(img) => doc.push(img),
+                Err(e) => eprintln!("Header image error: {}", e),
+            }
+        }
+        Err(e) => {
+            eprintln!("Header image load error: {}. Trying filesystem fallback...", e);
+            if let Ok(data) = std::fs::read("../public/header.png") {
+                if let Ok(img) = elements::Image::from_reader(std::io::Cursor::new(data)) {
+                    doc.push(img);
+                }
+            }
         }
     }
     doc.push(elements::Break::new(0.4));
@@ -81,9 +91,33 @@ fn render_header(doc: &mut genpdf::Document) {
 
 fn render_footer(doc: &mut genpdf::Document) {
     doc.push(elements::Break::new(0.5));
-    if let Some(data) = resize_image_bytes(FOOTER_BYTES, 900) {
-        if let Ok(img) = elements::Image::from_reader(std::io::Cursor::new(data)) {
-            doc.push(img);
+    match image::load_from_memory(FOOTER_BYTES) {
+        Ok(img) => {
+            let (w, h) = img.dimensions();
+            let data: Vec<u8> = if w <= 900 {
+                FOOTER_BYTES.to_vec()
+            } else {
+                let ratio = 900.0 / w as f64;
+                let new_h = (h as f64 * ratio) as u32;
+                let resized = img.resize(900, new_h, image::imageops::FilterType::Lanczos3);
+                let mut buf = std::io::Cursor::new(Vec::new());
+                match resized.write_to(&mut buf, image::ImageFormat::Png) {
+                    Ok(_) => buf.into_inner(),
+                    Err(e) => { eprintln!("Footer resize error: {}", e); return; }
+                }
+            };
+            match elements::Image::from_reader(std::io::Cursor::new(data)) {
+                Ok(img) => doc.push(img),
+                Err(e) => eprintln!("Footer image error: {}", e),
+            }
+        }
+        Err(e) => {
+            eprintln!("Footer image load error: {}. Trying filesystem fallback...", e);
+            if let Ok(data) = std::fs::read("../public/footer.png") {
+                if let Ok(img) = elements::Image::from_reader(std::io::Cursor::new(data)) {
+                    doc.push(img);
+                }
+            }
         }
     }
 }
