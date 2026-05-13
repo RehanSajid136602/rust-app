@@ -116,9 +116,9 @@ fn render_document_info(
     }
     doc.push(
         elements::Paragraph::new(header_parts.join("  |  "))
-            .styled(small_bold),
+            .styled(small_bold)
+            .padded((0, 0, 4, 0)),
     );
-    doc.push(elements::Break::new(0.3));
 
     // Client info
     if !client_name.is_empty() {
@@ -129,22 +129,24 @@ fn render_document_info(
                 .styled(small),
         );
         if !client_address.is_empty() {
-            doc.push(elements::Paragraph::new(client_address).styled(small));
+            doc.push(
+                elements::Paragraph::new(client_address)
+                    .styled(small)
+                    .padded((0, 0, 3, 0)),
+            );
         }
-        doc.push(elements::Break::new(0.2));
     }
 
     if !settings.salutation.is_empty() {
         doc.push(elements::Paragraph::new(&settings.salutation).styled(small));
     }
     if !settings.body_text.is_empty() {
-        doc.push(elements::Break::new(0.1));
         doc.push(
             elements::Paragraph::new(&settings.body_text)
-                .styled(style::Style::new().italic().with_font_size(8)),
+                .styled(style::Style::new().italic().with_font_size(8))
+                .padded((0, 0, 6, 0)),
         );
     }
-    doc.push(elements::Break::new(0.5));
 }
 
 fn render_items_with_totals(doc: &mut genpdf::Document, items: &[crate::models::InvoiceItem], invoice: &Invoice) {
