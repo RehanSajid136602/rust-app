@@ -8,6 +8,8 @@ use image::GenericImageView;
 
 const HEADER_BYTES: &[u8] = include_bytes!("../../../public/header.png");
 const FOOTER_BYTES: &[u8] = include_bytes!("../../../public/footer.png");
+const PHONE_ICON: &[u8] = include_bytes!("../../icons/phone.png");
+const EMAIL_ICON: &[u8] = include_bytes!("../../icons/email.png");
 const FONT_DIRS: &[&str] = &[
     "/usr/share/fonts/liberation",
     "/usr/share/fonts/truetype/liberation",
@@ -308,6 +310,56 @@ pub fn export_invoice_pdf(
         doc.push(elements::Break::new(0.5));
     }
 
+    doc.push(elements::Break::new(0.3));
+    doc.push(
+        elements::Paragraph::new("Thank you for considering Zahra Enterprises as business partner.")
+            .aligned(Alignment::Center)
+            .styled(style::Style::new().with_font_size(8)),
+    );
+    doc.push(
+        elements::Paragraph::new("And hope for a good business relationship in future.")
+            .aligned(Alignment::Center)
+            .styled(style::Style::new().with_font_size(8)),
+    );
+
+    doc.push(elements::Break::new(0.5));
+
+    // Contact block below thank-you text
+    doc.push(
+        elements::Paragraph::new("Office # 2-3, Basement Asif Plaza, Fazal-e-Haq Road, Blue Area, Islamabad")
+            .aligned(Alignment::Center)
+            .styled(style::Style::new().with_font_size(7).with_color(style::Color::Rgb(220, 50, 50))),
+    );
+    doc.push(elements::Break::new(0.2));
+
+    // Contact line with icons + text using table layout
+    {
+        let mut table = elements::TableLayout::new(vec![4, 45, 4, 45]);
+
+        let phone_icon = elements::Image::from_reader(std::io::Cursor::new(PHONE_ICON.to_vec()))
+            .expect("phone icon");
+        let email_icon = elements::Image::from_reader(std::io::Cursor::new(EMAIL_ICON.to_vec()))
+            .expect("email icon");
+
+        table.row()
+            .element(phone_icon)
+            .element(
+                elements::Paragraph::new("0300-5259751 / 0345-8510130")
+                    .aligned(Alignment::Left)
+                    .styled(style::Style::new().with_font_size(7))
+                    .padded(2),
+            )
+            .element(email_icon)
+            .element(
+                elements::Paragraph::new("zahraenterprises4@gmail.com")
+                    .aligned(Alignment::Left)
+                    .styled(style::Style::new().with_font_size(7))
+                    .padded(2),
+            )
+            .push().expect("contact row");
+        doc.push(table);
+    }
+
     render_footer(&mut doc);
 
     doc.render_to_file(output_path)
@@ -378,6 +430,56 @@ pub fn export_quotation_pdf(
                 .styled(style::Style::new().italic().with_font_size(8)),
         );
         doc.push(elements::Break::new(0.5));
+    }
+
+    doc.push(elements::Break::new(0.3));
+    doc.push(
+        elements::Paragraph::new("Thank you for considering Zahra Enterprises as business partner.")
+            .aligned(Alignment::Center)
+            .styled(style::Style::new().with_font_size(8)),
+    );
+    doc.push(
+        elements::Paragraph::new("And hope for a good business relationship in future.")
+            .aligned(Alignment::Center)
+            .styled(style::Style::new().with_font_size(8)),
+    );
+
+    doc.push(elements::Break::new(0.5));
+
+    // Contact block below thank-you text
+    doc.push(
+        elements::Paragraph::new("Office # 2-3, Basement Asif Plaza, Fazal-e-Haq Road, Blue Area, Islamabad")
+            .aligned(Alignment::Center)
+            .styled(style::Style::new().with_font_size(7).with_color(style::Color::Rgb(220, 50, 50))),
+    );
+    doc.push(elements::Break::new(0.2));
+
+    // Contact line with icons + text using table layout
+    {
+        let mut table = elements::TableLayout::new(vec![4, 45, 4, 45]);
+
+        let phone_icon = elements::Image::from_reader(std::io::Cursor::new(PHONE_ICON.to_vec()))
+            .expect("phone icon");
+        let email_icon = elements::Image::from_reader(std::io::Cursor::new(EMAIL_ICON.to_vec()))
+            .expect("email icon");
+
+        table.row()
+            .element(phone_icon)
+            .element(
+                elements::Paragraph::new("0300-5259751 / 0345-8510130")
+                    .aligned(Alignment::Left)
+                    .styled(style::Style::new().with_font_size(7))
+                    .padded(2),
+            )
+            .element(email_icon)
+            .element(
+                elements::Paragraph::new("zahraenterprises4@gmail.com")
+                    .aligned(Alignment::Left)
+                    .styled(style::Style::new().with_font_size(7))
+                    .padded(2),
+            )
+            .push().expect("contact row");
+        doc.push(table);
     }
 
     render_footer(&mut doc);
